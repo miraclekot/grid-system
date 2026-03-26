@@ -3,8 +3,10 @@ from pathlib import Path
 
 class Router:
     """Простой класс для маршрутизации"""
-    def __init__(self):
+    def __init__(self, static_dir: str):
         self.routes = {}
+        self.static_dir = static_dir
+
     
     def add_route(self, path, handler):
         self.routes[path] = handler
@@ -19,6 +21,7 @@ class Router:
         
         # Если путь начинается с static/ или это просто файл
         full_path = Path(self.static_dir) / file_path
+        print(f"[Router] full path: {full_path}")
         
         # Проверяем, существует ли файл и не выходит ли он за пределы static_dir
         try:

@@ -1,26 +1,32 @@
 from http.server import BaseHTTPRequestHandler
-
+import os
 from master_node.src.router import Router
 
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Проверяем, есть ли маршрут для этого пути
         handler = app.get_handler(self.path)
         
         if handler:
             response = handler()
             self.send_response(response['status'])
-            self.send_header('Content-type', response['content_type'])
+            # Убираем charset из заголовка, оставляем только MIME тип
+            content_type = response['content_type'].split(';')[0]
+            self.send_header('Content-type', content_type)
             self.end_headers()
-            self.wfile.write(response['content'].encode('utf-8'))
+            
+            content = response['content']
+            if isinstance(content, str):
+                self.wfile.write(content.encode('utf-8'))
+            else:
+                self.wfile.write(content)
         else:
-            # Если маршрута нет, пытаемся подать статический файл
             static_file = app.serve_static(self.path)
             
             if static_file:
-                # Определяем тип файла по расширению
                 content_type = self.get_content_type(static_file)
+                # Убираем charset если есть
+                content_type = content_type.split(';')[0]
                 
                 try:
                     with open(static_file, 'rb') as f:
@@ -31,17 +37,16 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(content)
                 except Exception as e:
-                    self.send_error(500, f"Ошибка при чтении файла: {e}")
+                    self.send_error(500, f"Error reading file: {e}")
             else:
-                self.send_error(404, f"Путь {self.path} не найден")
-                
+                self.send_error(404, f"Path {self.path} not found")
+    
     def get_content_type(self, file_path):
-        """Определяем MIME тип файла по расширению"""
         ext = os.path.splitext(file_path)[1].lower()
         mime_types = {
-            '.html': 'text/html; charset=utf-8',
-            '.css': 'text/css; charset=utf-8',
-            '.js': 'application/javascript; charset=utf-8',
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'application/javascript',
             '.jpg': 'image/jpeg',
             '.jpeg': 'image/jpeg',
             '.png': 'image/png',
@@ -49,7 +54,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             '.svg': 'image/svg+xml',
             '.ico': 'image/x-icon',
             '.json': 'application/json',
-            '.txt': 'text/plain; charset=utf-8',
+            '.txt': 'text/plain',
             '.pdf': 'application/pdf',
         }
         return mime_types.get(ext, 'application/octet-stream')
@@ -60,7 +65,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 class App:
     def __init__(self):
-        self.router = Router()
+        self.router = Router("master_node/dispatcher/static")
     
     def route(self, path):
         def decorator(handler):
@@ -77,7 +82,6 @@ class App:
 
 app = App()
 
-# Определяем маршруты через декораторы
 @app.route('/')
 def index_handler():
     try:
@@ -85,22 +89,20 @@ def index_handler():
             html_content = f.read()
         return {
             'status': 200,
-            'content_type': 'text/html; charset=utf-8',
+            'content_type': 'text/html',  # без charset
             'content': html_content
         }
     except FileNotFoundError:
         return {
             'status': 404,
-            'content_type': 'text/html; charset=utf-8',
+            'content_type': 'text/html',
             'content': """
             <!DOCTYPE html>
             <html>
-            <head><title>404 Не найдено</title></head>
+            <head><title>404 Not Found</title></head>
             <body>
-                <h1>404 Запрашиваемый ресурс не найден</h1>
+                <h1>404 Requested resource not found</h1>
             </body>
             </html>
             """
         }
-
-
