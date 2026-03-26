@@ -1,6 +1,13 @@
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
+from pathlib import Path
 from master_node.src.router import Router
+
+
+def run_http_server(port):
+    server = HTTPServer(('', port), RequestHandler)
+    print(f"dispatcher запущен на http://localhost:{port}")
+    server.serve_forever()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -64,8 +71,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 class App:
-    def __init__(self):
-        self.router = Router("master_node/dispatcher/static")
+    def __init__(self, static_dir):
+        self.static_dir = static_dir
+        self.router = Router(static_dir)
     
     def route(self, path):
         def decorator(handler):
@@ -80,12 +88,12 @@ class App:
         return self.router.serve_static_file(path)
 
 
-app = App()
+app = App("master_node/static")
 
 @app.route('/')
 def index_handler():
     try:
-        with open('static/index.html', 'r', encoding='utf-8') as f:
+        with open(os.path.join(app.static_dir, 'index.html'), 'r', encoding='utf-8') as f:
             html_content = f.read()
         return {
             'status': 200,

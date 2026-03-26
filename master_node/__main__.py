@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from master_node.dispatcher.dispatcher import run_dispatcher
+from master_node.http_server import run_http_server
 
 
 if __name__ == "__main__":
@@ -19,4 +19,4 @@ if __name__ == "__main__":
     if not Path(args.dict_filepath).exists():
         raise Exception(f"dictionaire file is not exist: {args.dict_filepath}")
     
-    run_dispatcher(9001)
+    run_http_server(9001)
