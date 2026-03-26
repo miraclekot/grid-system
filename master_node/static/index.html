@@ -7,7 +7,6 @@
     <style>
         * {
             box-sizing: border-box;
-            user-select: none; /* улучшает перетаскивание при скролле, но не мешает тексту */
         }
 
         body {
@@ -32,7 +31,7 @@
 
         /* ========= ЛЕВАЯ ЧАСТЬ: матрица (2/3 ширины) ========= */
         .matrix-area {
-            flex: 2; /* 2/3 от общей ширины */
+            flex: 2;
             background: #ffffff;
             display: flex;
             flex-direction: column;
@@ -42,7 +41,6 @@
             overflow: hidden;
         }
 
-        /* заголовок/панель матрицы (опционально) */
         .matrix-header {
             padding: 1rem 1.25rem;
             background: #f8fafc;
@@ -51,6 +49,13 @@
             font-size: 0.95rem;
             color: #1e293b;
             letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: space-between;
+        }
+
+        .matrix-header-left {
             display: flex;
             align-items: center;
             gap: 8px;
@@ -65,22 +70,44 @@
             color: #1e40af;
         }
 
-        /* обертка для прокрутки (горизонтальная + вертикальная) */
+        .drag-hint-badge {
+            font-size: 0.7rem;
+            background: #f1f5f9;
+            padding: 4px 10px;
+            border-radius: 20px;
+            color: #475569;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
         .matrix-scroll-wrapper {
             flex: 1;
             overflow: auto;
             background: #fefefe;
             position: relative;
             scroll-behavior: smooth;
+            transition: all 0.2s ease;
         }
 
-        /* таблица (сетка) — идеально для букв в клетках */
+        .matrix-scroll-wrapper.drag-over {
+            background-color: #eff6ff;
+            box-shadow: inset 0 0 0 3px #3b82f6;
+        }
+
+        .matrix-container {
+            display: inline-block;
+            min-width: 100%;
+            min-height: 100%;
+        }
+
         .matrix-grid {
             display: inline-block;
             min-width: 100%;
             border-collapse: collapse;
             font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
             background: white;
+            margin: 0;
         }
 
         .matrix-grid td {
@@ -92,24 +119,15 @@
             font-weight: 500;
             border: 1px solid #e2e8f0;
             background-color: #ffffff;
-            transition: background-color 0.1s ease, box-shadow 0.05s linear;
+            transition: background-color 0.1s ease;
             color: #0f172a;
             padding: 0;
         }
 
-        /* Эффект для будущей закраски (уже готовый класс highlight, но пока не используется) 
-           Тем не менее примем к сведению: можно будет добавить .filled или .marked */
         .matrix-grid td.highlight {
-            background-color: #bbf7d0; /* светло-зеленый */
-            transition: 0.05s;
+            background-color: #bbf7d0;
         }
 
-        /* для удобства чтения при больших матрицах */
-        .matrix-grid td:first-child {
-            border-left: 1px solid #cbd5e1;
-        }
-
-        /* подсказка если матрица пуста */
         .empty-matrix-message {
             display: flex;
             justify-content: center;
@@ -121,11 +139,12 @@
             background: #fafcff;
             flex-direction: column;
             gap: 12px;
+            min-height: 300px;
         }
 
-        /* ========= ПРАВАЯ ЧАСТЬ: настройки (1/3 ширины) ========= */
+        /* ========= ПРАВАЯ ЧАСТЬ: настройки ========= */
         .settings-area {
-            flex: 1; /* 1/3 от общей ширины */
+            flex: 1;
             background: #ffffff;
             display: flex;
             flex-direction: column;
@@ -156,7 +175,6 @@
             color: #5b6e8c;
         }
 
-        /* контейнер для динамических настроек (масштабируемый) */
         .settings-container {
             padding: 1.25rem 1.5rem;
             display: flex;
@@ -165,7 +183,6 @@
             flex: 1;
         }
 
-        /* каждый блок настройки */
         .setting-block {
             display: flex;
             flex-direction: column;
@@ -189,7 +206,6 @@
             font-size: 1rem;
         }
 
-        /* стили для инпутов */
         input, textarea, .file-input-wrapper {
             width: 100%;
             border-radius: 14px;
@@ -214,7 +230,19 @@
             font-family: 'SF Mono', monospace;
         }
 
-        /* кастомная кнопка для файла */
+        /* Стили для текстового поля с поддержкой drag and drop */
+        .words-textarea {
+            transition: all 0.2s ease;
+            cursor: text;
+        }
+        
+        .words-textarea.drag-over {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+            transform: scale(1.01);
+        }
+
         .file-input-wrapper {
             position: relative;
             background: #f1f5f9;
@@ -261,13 +289,16 @@
             transition: 0.1s;
         }
 
+        button:hover {
+            background: #e2e8f0;
+        }
+
         .divider {
             height: 1px;
             background: #eef2ff;
             margin: 0.5rem 0;
         }
 
-        /* будущие настройки будут просто добавляться в .settings-container, масштабируемость */
         .future-placeholder {
             margin-top: 0.5rem;
             font-size: 0.7rem;
@@ -276,6 +307,34 @@
             border-top: 1px dashed #e2e8f0;
             padding-top: 1rem;
         }
+
+        /* уведомление о загрузке */
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1e293b;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            pointer-events: none;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -283,54 +342,63 @@
     <!-- Левая область: матрица с прокруткой -->
     <div class="matrix-area">
         <div class="matrix-header">
-            📊 Матрица букв
-            <span id="matrix-dimensions">0×0</span>
+            <div class="matrix-header-left">
+                📊 Матрица букв
+                <span id="matrix-dimensions">0×0</span>
+            </div>
+            <div class="drag-hint-badge">
+                📁 Перетащите txt файл сюда
+            </div>
         </div>
         <div class="matrix-scroll-wrapper" id="matrixScrollWrapper">
-            <!-- здесь динамически рендерится таблица -->
-            <div id="matrixContainer" style="display: inline-block; min-width: 100%;">
+            <div id="matrixContainer" class="matrix-container">
                 <div class="empty-matrix-message">
                     📂 Загрузите файл матрицы<br>
-                    (текстовый файл, буквы через пробелы/табы или строки)
+                    (текстовый файл, буквы через пробелы/табы или строки)<br><br>
+                    🖱️ Или перетащите txt файл в эту область
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Правая область: настройки (масштабируемая) -->
+    <!-- Правая область: настройки -->
     <div class="settings-area">
         <div class="settings-header">
             <h2>⚙️ Параметры</h2>
             <p>управление матрицей и словами</p>
         </div>
         <div class="settings-container" id="settingsContainer">
-            <!-- 2.1 Загрузка файла матрицы -->
+            <!-- Загрузка файла матрицы -->
             <div class="setting-block">
                 <div class="setting-label">
                     📁 <span>Матрица букв (файл)</span>
                 </div>
-                <div class="file-input-wrapper" id="fileUploadWrapper">
+                <div class="file-input-wrapper">
                     📂 Выбрать .txt или .csv
-                    <input type="file" id="matrixFileInput" accept=".txt,.csv,text/plain, .json">
+                    <input type="file" id="matrixFileInput" accept=".txt,.csv,text/plain">
                 </div>
                 <div class="info-badge">
                     Формат: строки, буквы через пробел, запятую или просто подряд
                 </div>
             </div>
 
-            <!-- 2.2 текстовый инпут для списка слов (разделитель - перенос строки) -->
+            <!-- Текстовый инпут для списка слов с поддержкой Drag & Drop -->
             <div class="setting-block">
                 <div class="setting-label">
                     📝 <span>Список слов</span>
                     <i>(по одному на строку)</i>
                 </div>
-                <textarea id="wordsListInput" placeholder="например:&#10;ПРИВЕТ&#10;МИР&#10;КРОТ&#10;АБАКУС" rows="5"></textarea>
-                <div class="info-badge">
-                    Каждое слово с новой строки. Пока что только хранение (готово к будущей закраске)
+                <textarea 
+                    id="wordsListInput" 
+                    class="words-textarea"
+                    placeholder="📌 Введите слова вручную или&#10;📁 ПЕРЕТАЩИТЕ txt-файл сюда&#10;&#10;например:&#10;ПРИВЕТ&#10;МИР&#10;КРОТ&#10;АБАКУС" 
+                    rows="6"
+                ></textarea>
+                <div class="info-badge" id="wordsDropHint">
+                    🖱️ Поддерживается drag & drop: перетащите .txt файл в поле выше
                 </div>
             </div>
 
-            <!-- Разделитель для масштабируемости: здесь позже можно добавить новые настройки динамически -->
             <div class="divider"></div>
             <div class="setting-block" id="extraSettingsPlaceholder">
                 <div class="setting-label">
@@ -350,7 +418,7 @@
 <script>
     (function() {
         // ---------- Глобальное состояние ----------
-        let currentMatrix = [];      // двумерный массив строк (буквы/символы)
+        let currentMatrix = [];
         let rows = 0;
         let cols = 0;
 
@@ -359,23 +427,142 @@
         const matrixDimensionsSpan = document.getElementById('matrix-dimensions');
         const matrixFileInput = document.getElementById('matrixFileInput');
         const wordsTextarea = document.getElementById('wordsListInput');
-        const scrollWrapper = document.getElementById('matrixScrollWrapper');
+        const matrixScrollWrapper = document.getElementById('matrixScrollWrapper');
+        
+        // Функция для показа уведомления
+        function showNotification(message, isError = false) {
+            const notification = document.createElement('div');
+            notification.className = 'toast-notification';
+            notification.textContent = message;
+            notification.style.background = isError ? '#dc2626' : '#10b981';
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 2500);
+        }
 
-        // вспомогательная функция: отрисовать матрицу в DOM (таблица с клетками)
+        // ========== DRAG & DROP ДЛЯ МАТРИЦЫ ==========
+        function setupDragAndDropForMatrix() {
+            const matrixArea = matrixScrollWrapper;
+            
+            // Визуальный фидбек при наведении на область матрицы
+            matrixArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                matrixArea.classList.add('drag-over');
+            });
+            
+            matrixArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                matrixArea.classList.remove('drag-over');
+            });
+            
+            // Обработка сброса файла в область матрицы
+            matrixArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                matrixArea.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    // Проверяем, что это текстовый файл
+                    if (file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt') || file.name.toLowerCase().endsWith('.csv')) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            const content = event.target.result;
+                            const parsed = parseMatrixFromText(content);
+                            if (parsed.length === 0) {
+                                showNotification('❌ Файл не содержит корректных данных для матрицы', true);
+                                return;
+                            }
+                            setMatrix(parsed);
+                            showNotification(`✅ Матрица загружена из ${file.name} (${rows}×${cols})`, false);
+                        };
+                        reader.onerror = function() {
+                            showNotification('❌ Ошибка чтения файла', true);
+                        };
+                        reader.readAsText(file, 'UTF-8');
+                    } else {
+                        showNotification('❌ Пожалуйста, перетащите файл в формате .txt или .csv', true);
+                    }
+                }
+            });
+        }
+        
+        // ========== DRAG & DROP ДЛЯ ТЕКСТОВОГО ПОЛЯ СО СЛОВАМИ ==========
+        function setupDragAndDropForWords() {
+            // Глобальное предотвращение стандартного поведения браузера для всех элементов
+            document.body.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            document.body.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            const textarea = wordsTextarea;
+            
+            // Визуальный фидбек при наведении на текстовое поле
+            textarea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                textarea.classList.add('drag-over');
+            });
+            
+            textarea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                textarea.classList.remove('drag-over');
+            });
+            
+            // Обработка сброса файла
+            textarea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                textarea.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    if (file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            const fileContent = event.target.result;
+                            wordsTextarea.value = fileContent;
+                            const inputEvent = new Event('input', { bubbles: true });
+                            wordsTextarea.dispatchEvent(inputEvent);
+                            
+                            const wordCount = fileContent.split(/\r?\n/).filter(line => line.trim().length > 0).length;
+                            showNotification(`✅ Загружено ${file.name} (${wordCount} слов)`, false);
+                        };
+                        reader.onerror = function() {
+                            showNotification('❌ Ошибка чтения файла', true);
+                        };
+                        reader.readAsText(file, 'UTF-8');
+                    } else {
+                        showNotification('❌ Пожалуйста, перетащите файл в формате .txt', true);
+                    }
+                }
+            });
+        }
+        
+        // ========== ФУНКЦИИ ДЛЯ МАТРИЦЫ ==========
+        
         function renderMatrix() {
             if (!currentMatrix || rows === 0 || cols === 0) {
-                // пустое состояние
                 matrixContainer.innerHTML = `
                     <div class="empty-matrix-message">
                         📂 Нет загруженной матрицы<br>
-                        используйте загрузчик справа
+                        используйте загрузчик справа<br><br>
+                        🖱️ Или перетащите txt файл в эту область
                     </div>
                 `;
                 matrixDimensionsSpan.innerText = `0×0`;
                 return;
             }
 
-            // строим таблицу
             const table = document.createElement('table');
             table.className = 'matrix-grid';
             table.cellSpacing = "0";
@@ -385,32 +572,23 @@
                 const tr = document.createElement('tr');
                 for (let j = 0; j < cols; j++) {
                     const td = document.createElement('td');
-                    // буква / символ из матрицы (приводим к верхнему регистру для красоты, но можно оригинал)
                     let cellValue = currentMatrix[i][j];
                     if (typeof cellValue === 'string' && cellValue.length > 1) {
-                        // если вдруг там несколько символов, возьмем первый (на случай кривого парсинга)
                         cellValue = cellValue.charAt(0);
                     }
                     td.textContent = cellValue ? cellValue.toUpperCase() : '?';
                     td.setAttribute('data-row', i);
                     td.setAttribute('data-col', j);
-                    // Примечание: классы для будущей закраски пока не добавляем, но структура готова.
-                    // Позже можно будет вызвать функцию highlightCells(words) которая будет красить ячейки.
                     tr.appendChild(td);
                 }
                 table.appendChild(tr);
             }
 
-            // очищаем контейнер и добавляем таблицу
             matrixContainer.innerHTML = '';
             matrixContainer.appendChild(table);
-
-            // обновляем размеры в заголовке
             matrixDimensionsSpan.innerText = `${rows}×${cols}`;
         }
 
-        // Парсер загруженного файла: поддерживает различные разделители (пробел, табуляция, запятая, а также строки без разделителей)
-        // Ожидаем текстовый файл: каждая строка = строка матрицы, символы могут быть разделены пробелами/запятыми или вообще слитно.
         function parseMatrixFromText(text) {
             const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
             if (lines.length === 0) return [];
@@ -419,33 +597,22 @@
             let maxCols = 0;
 
             for (let line of lines) {
-                // убираем лишние пробелы по краям
                 line = line.trim();
                 let rowSymbols = [];
 
-                // пробуем разные варианты разделения:
-                // 1) если в строке есть пробелы, запятые, табуляции — разбиваем по регулярке
                 if (line.includes(' ') || line.includes(',') || line.includes('\t')) {
-                    // разделители: пробелы, запятые, табуляции
                     const parts = line.split(/[\s,]+/);
                     for (let part of parts) {
                         if (part.length === 0) continue;
-                        // если часть содержит больше 1 символа, возможно это несколько букв слитно? 
-                        // Но по условию каждая буква в своей клетке, но файл может быть слитным? 
-                        // Предполагаем что если часть длиннее 1, то это или слово, но матрица обычно буквы.
-                        // Для корректности: разбиваем длинные строки на отдельные символы? 
                         if (part.length === 1) {
                             rowSymbols.push(part);
                         } else {
-                            // допустим, в файле строка вида "ABC DEF" => part="ABC" длиннее 1.
-                            // разобьем на отдельные символы, чтобы каждая буква в своей клетке
                             for (let ch of part) {
                                 rowSymbols.push(ch);
                             }
                         }
                     }
                 } else {
-                    // нет явных разделителей — считаем что каждый символ это отдельная ячейка (слитная строка)
                     for (let ch of line) {
                         rowSymbols.push(ch);
                     }
@@ -457,18 +624,16 @@
                 }
             }
 
-            // выравниваем строки по максимальной длине (добавляем пустые строки? placeholder ' '?)
             if (parsedRows.length > 0 && maxCols > 0) {
                 for (let i = 0; i < parsedRows.length; i++) {
                     while (parsedRows[i].length < maxCols) {
-                        parsedRows[i].push(' '); // заполняем пробелом, чтобы матрица была прямоугольной
+                        parsedRows[i].push(' ');
                     }
                 }
             }
             return parsedRows;
         }
 
-        // Установка матрицы из двумерного массива
         function setMatrix(matrix2D) {
             if (!matrix2D || matrix2D.length === 0) {
                 currentMatrix = [];
@@ -480,11 +645,9 @@
             currentMatrix = matrix2D;
             rows = currentMatrix.length;
             cols = rows > 0 ? currentMatrix[0].length : 0;
-            // дополнительная проверка: все строки должны быть одинаковой длины (должны быть выровнены)
+            
             for (let i = 0; i < rows; i++) {
                 if (currentMatrix[i].length !== cols) {
-                    console.warn(`Строка ${i} имеет длину ${currentMatrix[i].length}, ожидалось ${cols}. Выравниваем.`);
-                    // выравнивание
                     if (currentMatrix[i].length < cols) {
                         while(currentMatrix[i].length < cols) currentMatrix[i].push(' ');
                     } else {
@@ -495,7 +658,6 @@
             renderMatrix();
         }
 
-        // Обработка загруженного файла
         function handleMatrixFile(file) {
             if (!file) return;
             const reader = new FileReader();
@@ -503,18 +665,18 @@
                 const content = e.target.result;
                 const parsed = parseMatrixFromText(content);
                 if (parsed.length === 0) {
-                    alert('Файл не содержит корректных данных для матрицы. Пожалуйста, используйте текстовый файл с буквами.');
+                    showNotification('❌ Файл не содержит корректных данных для матрицы', true);
                     return;
                 }
                 setMatrix(parsed);
+                showNotification(`📊 Матрица загружена: ${rows}×${cols}`, false);
             };
             reader.onerror = function() {
-                alert('Ошибка чтения файла');
+                showNotification('❌ Ошибка чтения файла', true);
             };
             reader.readAsText(file, 'UTF-8');
         }
 
-        // Добавляем слушатель на input file
         matrixFileInput.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (file) {
@@ -522,68 +684,44 @@
             }
         });
 
-        // ---------- Демонстрация масштабируемости настроек: сейчас мы можем динамически добавить новый блок настроек ----------
-        // Для подтверждения масштабируемости: можно добавить кнопку "Добавить пример настройки" (по желанию, но в задании не требуется,
-        // однако в целях показа — добавим через setTimeout? Нет, но покажем, что легко расширить. Создадим функцию addCustomSetting, 
-        // которая вставляет новый элемент в .settings-container перед .future-placeholder. Это демонстрация масштабируемости.
-        // Поскольку в будущем будут добавляться другие настройки, мы можем просто показать возможность. 
-        // Но чтобы не загромождать интерфейс, добавим маленький пример плюс опционально. Однако условие: "позже добавим еще настройки,
-        // компонент настроек должен быть масштабируемым." — Сейчас структура позволяет легко добавлять новые блоки через JS или верстку.
-        // Я добавлю скрытый функционал? Нет, лучше покажу API: при необходимости можно вызвать addSetting, но пользователь не просил интерактивного добавления,
-        // просто убедимся, что контейнер готов. Сделаем небольшую демку: при двойном клике по области дополнительных опций? Нет, это лишнее.
-        // Лучше просто оставить контейнер .settings-container и показать, что он гибкий. В коде также можно динамически добавить новую настройку.
-        // Чтобы подчеркнуть масштабируемость, создадим функцию registerNewSetting, но не будем ее вызывать автоматически, чтобы не сбивать пользователя.
-        // В комментарии покажем пример.
-        window.demoAddSetting = function(title, controlHtml) {
-            const newBlock = document.createElement('div');
-            newBlock.className = 'setting-block';
-            newBlock.innerHTML = `
-                <div class="setting-label">✨ ${title}</div>
-                ${controlHtml}
-            `;
-            const container = document.getElementById('settingsContainer');
-            const futureDiv = document.querySelector('.future-placeholder');
-            container.insertBefore(newBlock, futureDiv);
-        };
-        // Для проверки масштабируемости, можно раскомментировать вызов (но пока скрыто)
-        // setTimeout(() => {
-        //     window.demoAddSetting('Режим подсветки', '<button id="demoBtn" style="background:#eef2ff;">Пример кнопки (расширение)</button>');
-        // }, 1000);
-        // но не будем мешать пользователю, просто оставим возможность. Это подтверждает масштабируемость.
-
-        // ---------- Также дополним: слова пока сохраняются в textarea, позже они могут использоваться для закраски матрицы.
-        // Поскольку в условии сказано "прими к сведению, но пока не используй" — мы не реализуем закраску, но создали класс .highlight,
-        // который легко применить. При необходимости через wordsTextarea можно получить массив слов.
-        // Чтобы показать, что интеграция готова, повесим console.log при изменении слов (но не закрашиваем)
+        // Инициализация Drag & Drop для обоих компонентов
+        setupDragAndDropForMatrix();
+        setupDragAndDropForWords();
+        
+        // Слушатель изменения списка слов
         wordsTextarea.addEventListener('input', function() {
             const rawWords = wordsTextarea.value;
             const wordsList = rawWords.split(/\r?\n/).filter(w => w.trim().length > 0);
-            // Можно было бы вызвать будущую функцию highlightWords, но по заданию пока ничего не закрашиваем.
-            // Просто выводим в консоль (без визуальных изменений), подтверждая готовность.
-            console.log('[INFO] Список слов обновлен (будущая закраска):', wordsList);
+            console.log('[INFO] Список слов обновлен. Количество слов:', wordsList.length);
+            
+            const hintElement = document.getElementById('wordsDropHint');
+            if (hintElement && wordsList.length > 0) {
+                const originalText = hintElement.innerHTML;
+                hintElement.innerHTML = `✅ Загружено слов: ${wordsList.length}`;
+                hintElement.style.background = '#d1fae5';
+                setTimeout(() => {
+                    hintElement.innerHTML = originalText;
+                    hintElement.style.background = '#f1f5f9';
+                }, 2000);
+            }
         });
-
-        // Также если нужно сбросить матрицу при загрузке некорректного файла, оставляем.
-        // Добавим возможность drag and drop? не требуется, но по желанию.
-        // Для удобства, если пользователь хочет увидеть пример матрицы, можно добавить демо-кнопку? Нет по ТЗ не обязательно, но сделаем неявно.
-        // Чтобы не было пустой страницы, добавим пример матрицы-заглушки для наглядности? Лучше без автоматической демо, чтобы не сбивать.
-        // Однако для демонстрации работы: создадим пример кнопки "Пример матрицы" в дополнительных настройках? Да, это покажет масштабируемость и удобство.
-        // Но это не нарушает ТЗ (поле настроек масштабируемое). Создам одну дополнительную настройку как пример расширяемости. Но без нарушения условий.
-        // Добавим кнопку "Загрузить пример 4x4" в extraSettingsPlaceholder, чтобы показать, что новая настройка легко встраивается.
-        // Это на самом деле подчеркивает масштабируемость и полезно для демо.
+        
+        // Добавляем пример матрицы
         const extraBlock = document.getElementById('extraSettingsPlaceholder');
         if (extraBlock) {
             const demoButtonWrapper = document.createElement('div');
             demoButtonWrapper.style.marginTop = '8px';
-            const demoBtn = document.createElement('button');
-            demoBtn.textContent = '📋 Загрузить пример матрицы (4x4)';
-            demoBtn.style.width = '100%';
-            demoBtn.style.background = '#eef2ff';
-            demoBtn.style.borderRadius = '40px';
-            demoBtn.style.padding = '8px';
-            demoBtn.style.cursor = 'pointer';
-            demoBtn.style.fontWeight = '500';
-            demoBtn.onclick = () => {
+            
+            const demoBtnMatrix = document.createElement('button');
+            demoBtnMatrix.textContent = '📋 Загрузить пример матрицы (4x4)';
+            demoBtnMatrix.style.width = '100%';
+            demoBtnMatrix.style.background = '#eef2ff';
+            demoBtnMatrix.style.borderRadius = '40px';
+            demoBtnMatrix.style.padding = '8px';
+            demoBtnMatrix.style.cursor = 'pointer';
+            demoBtnMatrix.style.fontWeight = '500';
+            demoBtnMatrix.style.marginBottom = '8px';
+            demoBtnMatrix.onclick = () => {
                 const exampleMatrix = [
                     ['А', 'Б', 'В', 'Г'],
                     ['Д', 'Е', 'Ё', 'Ж'],
@@ -591,27 +729,40 @@
                     ['Л', 'М', 'Н', 'О']
                 ];
                 setMatrix(exampleMatrix);
-                // также можно вывести сообщение
-                const msg = document.createElement('div');
-                msg.textContent = '✓ Пример матрицы 4x4 загружен';
-                msg.style.fontSize = '0.7rem';
-                msg.style.color = '#2b6e3c';
-                msg.style.marginTop = '6px';
-                demoButtonWrapper.appendChild(msg);
-                setTimeout(() => msg.remove(), 1800);
+                showNotification('✓ Пример матрицы 4x4 загружен', false);
             };
-            demoButtonWrapper.appendChild(demoBtn);
-            // добавим в существующий блок extraSettingsPlaceholder после label
+            
+            const demoBtnWords = document.createElement('button');
+            demoBtnWords.textContent = '📝 Загрузить пример слов';
+            demoBtnWords.style.width = '100%';
+            demoBtnWords.style.background = '#eef2ff';
+            demoBtnWords.style.borderRadius = '40px';
+            demoBtnWords.style.padding = '8px';
+            demoBtnWords.style.cursor = 'pointer';
+            demoBtnWords.style.fontWeight = '500';
+            demoBtnWords.onclick = () => {
+                const exampleWords = `ПРИВЕТ\nМИР\nКРОТ\nАБАКУС\nМАТРИЦА\nБУКВА\nСЛОВО`;
+                wordsTextarea.value = exampleWords;
+                const inputEvent = new Event('input', { bubbles: true });
+                wordsTextarea.dispatchEvent(inputEvent);
+                showNotification('✓ Пример слов загружен (7 слов)', false);
+            };
+            
+            demoButtonWrapper.appendChild(demoBtnMatrix);
+            demoButtonWrapper.appendChild(demoBtnWords);
             extraBlock.appendChild(demoButtonWrapper);
         }
-
-        // Инициализация: матрица пустая
+        
+        // Инициализация
         setMatrix([]);
-        // Дополнительно: если пользователь перетаскивает файл в область матрицы, но ТЗ не требует, но удобно? опустим.
-
-        // Небольшой фикс: чтобы прокрутка сохранялась красиво, уже есть overflow:auto
-        // Также для масштабируемости настроек: при желании разработчик может вызвать window.demoAddSetting.
-        console.log('Компонент готов: матрица с прокруткой, поле настроек масштабируемое, загрузка файлов, список слов.');
+        
+        console.log('✅ Компонент готов: Drag & Drop работает для матрицы и для списка слов!');
+        console.log('💡 Перетащите txt файл в область матрицы слева или в текстовое поле слов справа');
+        
+        // Подсказка для пользователя
+        setTimeout(() => {
+            showNotification('💡 Перетащите .txt файл в матрицу слева или в поле слов справа!', false);
+        }, 1000);
     })();
 </script>
 </body>
