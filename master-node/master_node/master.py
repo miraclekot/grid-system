@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# master.py
 from pathlib import Path
 import asyncio
 from typing import List, Dict, Optional
@@ -11,13 +12,14 @@ from master_node.config import Config
 from master_node.log_manager import LogManager
 from master_node.storage import PersistentStorage
 
+
 class Master:
     def __init__(self, config: Config):
         self.config = config
         self.matrix = None
         self.words = None
         self.generator = None
-        self.dispatcher = None
+        self.dispatcher: Optional[Dispatcher] = None  # Явно указываем тип
         self.subproblems: Dict[int, Subproblem] = {}
         self.results: Dict[int, List[Placement]] = {}
         self.computation_started = False
@@ -35,6 +37,14 @@ class Master:
         
         # Логгеры
         self.logger = self.log_manager.get_logger("master")
+        
+        # Инициализация диспетчера (без matrix, она будет установлена позже)
+        try:
+            self.dispatcher = Dispatcher(self.config, self.matrix, self.log_manager)
+            self.logger.info("Dispatcher initialized")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize dispatcher: {e}")
+            raise
     
     def load_matrix(self, path: str):
         """Загрузка матрицы из файла."""
@@ -63,6 +73,10 @@ class Master:
                     raise ValueError(f"Row {i} has {len(row)} columns, expected {width}")
             
             self.matrix = matrix
+            # Обновляем матрицу в диспетчере
+            if self.dispatcher:
+                self.dispatcher.matrix = matrix
+                self.logger.debug("Matrix updated in dispatcher")
         
         self.logger.info(f"Matrix loaded: {len(self.matrix)}x{len(self.matrix[0])}")
         return self.matrix
@@ -82,11 +96,20 @@ class Master:
             self.logger.warning("Computation already started")
             return
         
+        if self.dispatcher is None:
+            raise RuntimeError("Dispatcher not initialized")
+        
         self.computation_started = True
         self.computation_done = False
         self.logger.info("Starting computation")
         
         try:
+            # Проверяем, что матрица и слова загружены
+            if not self.matrix:
+                raise ValueError("Matrix not loaded")
+            if not self.words:
+                raise ValueError("Words not loaded")
+            
             # Загружаем сохраненное состояние
             completed = self.storage.load_completed_subtasks()
             saved_results = self.storage.load_results()
@@ -103,9 +126,14 @@ class Master:
             self.storage.save_subproblems(self.subproblems)
             self.logger.info(f"Created {len(self.subproblems)} subproblems")
             
-            # Запускаем диспетчер
-            self.dispatcher = Dispatcher(self.config, self.matrix, self.log_manager)
-            await self.dispatcher.start()
+            # Обновляем матрицу в диспетчере (на всякий случай)
+            if self.dispatcher:
+                self.dispatcher.matrix = self.matrix
+            
+            # Запускаем диспетчер (если еще не запущен)
+            if not self.dispatcher.running:
+                await self.dispatcher.start()
+                self.logger.info("Dispatcher started")
             
             # Обрабатываем только невыполненные подзадачи
             pending_subproblems = [
@@ -145,6 +173,9 @@ class Master:
     
     async def _process_subproblem(self, subproblem: Subproblem):
         """Обработка одной подзадачи."""
+        if self.dispatcher is None:
+            raise RuntimeError("Dispatcher not initialized")
+        
         try:
             placements = await self.dispatcher.submit_subproblem(subproblem)
             self.results[subproblem.id] = placements
@@ -271,22 +302,47 @@ async def master_http_handler(master: Master):
     async def register(request):
         data = await request.json()
         address = data['address']
-        worker_id = await master.dispatcher.register_worker(address)
-        master.logger.info(f"Worker {worker_id} registered from {address}")
-        return web.json_response({'worker_id': worker_id})
+        
+        # Проверяем, что dispatcher инициализирован
+        if master.dispatcher is None:
+            master.logger.error("Dispatcher not initialized")
+            return web.Response(status=503, text="Dispatcher not initialized")
+        
+        try:
+            worker_id = await master.dispatcher.register_worker(address)
+            master.logger.info(f"Worker {worker_id} registered from {address}")
+            return web.json_response({'worker_id': worker_id})
+        except Exception as e:
+            master.logger.error(f"Error registering worker: {e}")
+            return web.Response(status=500, text=str(e))
     
     async def heartbeat(request):
         data = await request.json()
         worker_id = data['worker_id']
         status = WorkerStatus(data['status'])
         current_task = data.get('current_task')
-        await master.dispatcher.update_heartbeat(worker_id, status, current_task)
-        master.logger.debug(f"Heartbeat from worker {worker_id}: {status.value}")
-        return web.Response(status=200)
+        
+        if master.dispatcher is None:
+            master.logger.error("Dispatcher not initialized")
+            return web.Response(status=503, text="Dispatcher not initialized")
+        
+        try:
+            await master.dispatcher.update_heartbeat(worker_id, status, current_task)
+            master.logger.debug(f"Heartbeat from worker {worker_id}: {status.value}")
+            return web.Response(status=200)
+        except Exception as e:
+            master.logger.error(f"Error processing heartbeat: {e}")
+            return web.Response(status=500, text=str(e))
     
     async def workers_status(request):
-        status = master.dispatcher.get_worker_status()
-        return web.json_response(status)
+        if master.dispatcher is None:
+            return web.json_response({})
+        try:
+            status = master.dispatcher.get_worker_status()
+            return web.json_response(status)
+        except Exception as e:
+            master.logger.error(f"Error getting workers status: {e}")
+            return web.json_response({})
     
     app.router.add_post('/register', register)
     app.router.add_post('/heartbeat', heartbeat)
@@ -299,5 +355,3 @@ async def master_http_handler(master: Master):
     
     master.logger.info(f"Master HTTP server started on {master.config.master_host}:{master.config.master_port}")
     return runner
-
-    asyncio.run(main())

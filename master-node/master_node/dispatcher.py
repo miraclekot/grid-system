@@ -1,3 +1,4 @@
+# dispatcher.py
 import asyncio
 import aiohttp
 from typing import Dict, Optional, List
@@ -6,6 +7,7 @@ import logging
 from pathlib import Path
 
 from grid_system_common import Subproblem, WorkerInfo, WorkerStatus, Placement
+
 
 class Dispatcher:
     def __init__(self, config, matrix, log_manager):
@@ -24,9 +26,15 @@ class Dispatcher:
         self.session: Optional[aiohttp.ClientSession] = None
         self.running = False
         self.lock = asyncio.Lock()
+        
+        self.logger.info("Dispatcher initialized")
     
     async def start(self):
         """Запуск диспетчера."""
+        if self.running:
+            self.logger.warning("Dispatcher already running")
+            return
+            
         self.session = aiohttp.ClientSession()
         self.running = True
         self.worker_task = asyncio.create_task(self._worker_loop())
@@ -38,8 +46,16 @@ class Dispatcher:
         self.running = False
         if self.worker_task:
             self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:
+                pass
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
+            try:
+                await self.heartbeat_task
+            except asyncio.CancelledError:
+                pass
         if self.session:
             await self.session.close()
         self.logger.info("Dispatcher stopped")
@@ -49,10 +65,13 @@ class Dispatcher:
         async with self.lock:
             worker_id = self.next_worker_id
             self.next_worker_id += 1
+            
+            # Явно устанавливаем last_heartbeat            
             self.workers[worker_id] = WorkerInfo(
                 id=worker_id,
                 address=address,
-                status=WorkerStatus.AVAILABLE
+                status=WorkerStatus.AVAILABLE,
+                last_heartbeat=datetime.now(),
             )
             self.logger.info(f"Worker {worker_id} registered at {address}")
             return worker_id
@@ -62,15 +81,22 @@ class Dispatcher:
         async with self.lock:
             if worker_id in self.workers:
                 worker = self.workers[worker_id]
-                worker.status = WorkerStatus.OFFLINE
+                self.logger.info(f"Unregistering worker {worker_id} (status: {worker.status.value})")
+                
+                # Если у воркера была задача, переназначаем её
                 if worker.current_task is not None:
                     self.logger.warning(f"Worker {worker_id} died while processing task {worker.current_task}")
                     await self._reassign_task(worker.current_task)
+                
+                # Удаляем воркера из словарей
                 del self.workers[worker_id]
                 self.logger.info(f"Worker {worker_id} unregistered")
     
     async def submit_subproblem(self, subproblem: Subproblem) -> List[Placement]:
         """Отправка подзадачи на выполнение."""
+        if not self.running:
+            raise RuntimeError("Dispatcher not running")
+            
         future = asyncio.get_event_loop().create_future()
         self.futures[subproblem.id] = future
         await self.pending_queue.put(subproblem)
@@ -86,16 +112,24 @@ class Dispatcher:
     async def update_heartbeat(self, worker_id: int, status: WorkerStatus, current_task: Optional[int]):
         """Обновление heartbeat воркера."""
         async with self.lock:
-            if worker_id in self.workers:
-                worker = self.workers[worker_id]
-                worker.last_heartbeat = datetime.now()
-                worker.status = status
-                if status == WorkerStatus.BUSY and current_task is not None:
-                    worker.current_task = current_task
-                    self.logger.debug(f"Worker {worker_id} busy with task {current_task}")
-                elif status == WorkerStatus.AVAILABLE:
-                    worker.current_task = None
-                    worker.task_start_time = None
+            if worker_id not in self.workers:
+                self.logger.warning(f"Heartbeat from unknown worker {worker_id}")
+                return
+            
+            worker = self.workers[worker_id]
+            worker.last_heartbeat = datetime.now()
+            worker.status = status
+            
+            self.logger.debug(f"Worker {worker_id} heartbeat at {worker.last_heartbeat}, status: {status.value}")            
+            
+            if status == WorkerStatus.BUSY and current_task is not None:
+                worker.current_task = current_task
+                self.logger.debug(f"Worker {worker_id} busy with task {current_task}")
+            elif status == WorkerStatus.AVAILABLE:
+                worker.current_task = None
+                worker.task_start_time = None
+            elif status == WorkerStatus.OFFLINE:
+                self.unregister_worker(worker_id)
     
     async def _worker_loop(self):
         """Основной цикл распределения задач."""
@@ -126,14 +160,33 @@ class Dispatcher:
     async def _get_available_worker(self) -> Optional[WorkerInfo]:
         """Поиск доступного воркера."""
         async with self.lock:
+            current_time = datetime.now()
+            available_workers = []
+            
             for worker in self.workers.values():
-                if worker.status == WorkerStatus.AVAILABLE:
-                    if datetime.now() - worker.last_heartbeat < timedelta(seconds=30):
-                        return worker
-                    else:
-                        worker.status = WorkerStatus.OFFLINE
-                        self.logger.warning(f"Worker {worker.id} missed heartbeat, marking as offline")
-            return None
+                # Проверяем, что воркер активен (heartbeat не старше 30 секунд)
+                time_since_heartbeat = (current_time - worker.last_heartbeat).total_seconds()
+                is_alive = time_since_heartbeat < 30
+                
+                self.logger.debug(
+                    f"Worker {worker.id}: status={worker.status.value}, "
+                    f"last_heartbeat={time_since_heartbeat:.1f}s ago, is_alive={is_alive}"
+                )
+                
+                if worker.status == WorkerStatus.AVAILABLE and is_alive:
+                    available_workers.append(worker)
+                elif not is_alive and worker.status != WorkerStatus.OFFLINE:
+                    # Воркер не отвечает, помечаем как OFFLINE
+                    self.logger.warning(
+                        f"Worker {worker.id} missed heartbeat for {time_since_heartbeat:.1f}s, "
+                        f"marking as offline"
+                    )
+                    worker.status = WorkerStatus.OFFLINE
+            
+            if not available_workers:
+                return None
+            
+            return available_workers[0]
     
     async def _assign_task(self, worker: WorkerInfo, subproblem: Subproblem):
         """Назначение задачи воркеру."""
@@ -179,10 +232,15 @@ class Dispatcher:
                     await self.update_heartbeat(worker.id, WorkerStatus.AVAILABLE, None)
                     self.logger.info(f"Subproblem {subproblem.id} completed by worker {worker.id} with {len(placements)} placements")
                 else:
-                    raise Exception(f"Worker returned status {resp.status}")
+                    error_msg = f"Worker returned status {resp.status}"
+                    self.logger.error(error_msg)
+                    raise Exception(error_msg)
                     
         except asyncio.TimeoutError:
             self.logger.error(f"Worker {worker.id} timeout for subproblem {subproblem.id}")
+            await self._handle_worker_failure(worker, subproblem.id)
+        except aiohttp.ClientConnectorError as e:
+            self.logger.error(f"Cannot connect to worker {worker.id}: {e}")
             await self._handle_worker_failure(worker, subproblem.id)
         except Exception as e:
             self.logger.error(f"Worker {worker.id} failed: {e}")
@@ -190,58 +248,119 @@ class Dispatcher:
     
     async def _handle_worker_failure(self, worker: WorkerInfo, subproblem_id: int):
         """Обработка отказа воркера."""
+        self.logger.warning(f"Handling failure of worker {worker.id}")
         await self.unregister_worker(worker.id)
         await self._reassign_task(subproblem_id)
     
     async def _reassign_task(self, subproblem_id: int):
         """Переназначение задачи."""
         self.logger.info(f"Reassigning subproblem {subproblem_id}")
-        # В реальной реализации нужно восстановить Subproblem из хранилища
-        # Здесь мы просто удаляем future, чтобы задача была пересоздана
-        if subproblem_id in self.futures:
-            future = self.futures.pop(subproblem_id, None)
-            if future and not future.done():
-                future.set_exception(Exception("Worker failed"))
         
-        if subproblem_id in self.subproblem_to_worker:
-            del self.subproblem_to_worker[subproblem_id]
+        async with self.lock:
+            if subproblem_id in self.futures:
+                if subproblem_id in self.subproblem_to_worker:
+                    del self.subproblem_to_worker[subproblem_id]
+                
+                self.logger.info(f"Subproblem {subproblem_id} will be retried")
     
     async def _heartbeat_monitor(self):
         """Мониторинг heartbeat воркеров."""
         while self.running:
             try:
-                await asyncio.sleep(10)
+                await asyncio.sleep(10)  # Проверяем каждые 10 секунд
                 current_time = datetime.now()
+                
                 async with self.lock:
                     dead_workers = []
-                    for worker_id, worker in self.workers.items():
-                        if worker.status == WorkerStatus.BUSY:
-                            if worker.task_start_time and \
-                               current_time - worker.task_start_time > timedelta(seconds=self.config.task_timeout):
-                                self.logger.warning(f"Worker {worker_id} task timeout, marking as dead")
-                                dead_workers.append(worker_id)
-                        elif worker.status == WorkerStatus.AVAILABLE:
-                            if current_time - worker.last_heartbeat > timedelta(seconds=30):
-                                self.logger.warning(f"Worker {worker_id} missed heartbeat, marking as dead")
+                    
+                    for worker_id, worker in list(self.workers.items()):
+                        time_since_heartbeat = (current_time - worker.last_heartbeat).total_seconds()
+                        
+                        # Проверяем, что heartbeat не старше 30 секунд
+                        if time_since_heartbeat > 30:
+                            self.logger.warning(
+                                f"Worker {worker_id} missed heartbeat for {time_since_heartbeat:.1f}s, "
+                                f"status: {worker.status.value}, task: {worker.current_task}"
+                            )
+                            dead_workers.append(worker_id)
+                        
+                        # Для BUSY воркеров также проверяем таймаут задачи
+                        elif worker.status == WorkerStatus.BUSY and worker.task_start_time:
+                            task_duration = (current_time - worker.task_start_time).total_seconds()
+                            if task_duration > self.config.task_timeout:
+                                self.logger.warning(
+                                    f"Worker {worker_id} task timeout ({task_duration:.1f}s > {self.config.task_timeout}s), "
+                                    f"task: {worker.current_task}"
+                                )
                                 dead_workers.append(worker_id)
                     
+                    # Удаляем мертвых воркеров
                     for worker_id in dead_workers:
                         await self.unregister_worker(worker_id)
                         
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error in heartbeat monitor: {e}")
+                self.logger.error(f"Error in heartbeat monitor: {e}", exc_info=True)
+                await asyncio.sleep(1)
     
     def get_worker_status(self) -> Dict[int, dict]:
-        """Получение статуса всех воркеров."""
-        return {
-            worker_id: {
+        """
+        Получение статуса всех воркеров.
+        Это синхронный метод, так как только читает данные.
+        """
+        result = {}
+        current_time = datetime.now()
+        
+        # Копируем словарь для безопасного чтения
+        workers_copy = dict(self.workers)
+        
+        for worker_id, worker in workers_copy.items():
+            time_since_heartbeat = (current_time - worker.last_heartbeat).total_seconds()
+            is_alive = time_since_heartbeat < 30
+            
+            # Определяем отображаемый статус
+            if is_alive:
+                # Если воркер жив, показываем его реальный статус
+                status_display = worker.status.value
+            else:
+                # Если воркер не отвечает, показываем OFFLINE
+                status_display = WorkerStatus.OFFLINE.value
+            
+            result[worker_id] = {
                 "id": worker.id,
                 "address": worker.address,
-                "status": worker.status.value,
+                "status": status_display,
                 "current_task": worker.current_task,
-                "last_heartbeat": worker.last_heartbeat.isoformat() if worker.last_heartbeat else None
+                "last_heartbeat": worker.last_heartbeat.isoformat() if worker.last_heartbeat else None,
+                "heartbeat_seconds_ago": int(time_since_heartbeat),
+                "is_alive": is_alive
             }
-            for worker_id, worker in self.workers.items()
+        
+        return result
+    
+    def get_worker_count(self) -> Dict[str, int]:
+        """Получение статистики по воркерам (синхронный метод)."""
+        current_time = datetime.now()
+        
+        available = 0
+        busy = 0
+        offline = 0
+        
+        for worker in self.workers.values():
+            time_since_heartbeat = (current_time - worker.last_heartbeat).total_seconds()
+            is_alive = time_since_heartbeat < 30
+            
+            if not is_alive:
+                offline += 1
+            elif worker.status == WorkerStatus.AVAILABLE:
+                available += 1
+            elif worker.status == WorkerStatus.BUSY:
+                busy += 1
+        
+        return {
+            "total": len(self.workers),
+            "available": available,
+            "busy": busy,
+            "offline": offline
         }
