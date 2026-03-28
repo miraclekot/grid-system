@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 # master.py
+
 from pathlib import Path
 import asyncio
 from typing import List, Dict, Optional

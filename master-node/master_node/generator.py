@@ -1,3 +1,5 @@
+# generator.py
+
 from grid_system_common import Subproblem, DIRECTIONS
 import logging
 
@@ -7,6 +9,8 @@ class Generator:
         self.words = words
         self.coefficient = coefficient
         self.placement_counts = {}
+        self.matrix_h = len(matrix)
+        self.matrix_w = len(matrix[0])
         self.subproblems = []
         self.logger = log_manager.get_logger("generator") if log_manager else logging.getLogger("generator")
     
@@ -14,24 +18,9 @@ class Generator:
         """Вычисление количества возможных размещений для каждого слова."""
         self.logger.info(f"Computing placement counts for {len(self.words)} words")
         
-        # Построение индекса позиций букв
-        letter_positions = {}
-        for r, row in enumerate(self.matrix):
-            for c, ch in enumerate(row):
-                letter_positions.setdefault(ch, []).append((r, c))
-        
         # Подсчет размещений для каждого слова
-        for idx, word in enumerate(self.words):
-            count = 0
-            first_char = word[0]
-            positions = letter_positions.get(first_char, [])
-            
-            for r, c in positions:
-                for dr, dc in DIRECTIONS:
-                    if self._fits(word, r, c, dr, dc):
-                        count += 1
-            
-            self.placement_counts[word] = count
+        for idx, word in enumerate(self.words):           
+            self.placement_counts[word] = self.estimate_word_complexity(word)
             
             if (idx + 1) % 1000 == 0:
                 self.logger.debug(f"Processed {idx + 1}/{len(self.words)} words")
@@ -39,6 +28,40 @@ class Generator:
         min_count = min(self.placement_counts.values()) if self.placement_counts else 0
         max_count = max(self.placement_counts.values()) if self.placement_counts else 0
         self.logger.info(f"Placement counts computed. Min: {min_count}, Max: {max_count}")
+    
+    def estimate_word_complexity(self, word: str) -> float:
+        """
+        Оценивает количество возможных размещений слова в матрице width x height.
+        """
+        L = len(word)
+        total = 0.0
+        
+        width = self.matrix_w
+        height = self.matrix_h
+        
+        # Горизонтальные (2 направления)
+        if L <= width:
+            total += 2.0 * (width - L + 1) * height
+        
+        # Вертикальные (2 направления)
+        if L <= height:
+            total += 2.0 * width * (height - L + 1)
+        
+        # Диагональные (4 направления) — требуют, чтобы слово помещалось по обеим осям
+        if L <= width and L <= height:
+            total += 4.0 * (width - L + 1) * (height - L + 1)
+        
+        return total
+
+    def estimate_subtask_complexity(self, words: list[str]) -> float:
+        """
+        Оценивает суммарную сложность подзадачи.
+        """
+        
+        width = self.matrix_w
+        height = self.matrix_h
+        
+        return sum(self.estimate_word_complexity(w, width, height) for w in words)
     
     def _fits(self, word, r, c, dr, dc):
         """Проверка, помещается ли слово в заданную позицию."""
@@ -55,13 +78,11 @@ class Generator:
         """Создание подзадач на основе коэффициента сложности."""
         self.logger.info(f"Creating subproblems with coefficient {self.coefficient}")
         
-        # Сортировка слов по убыванию количества размещений для балансировки
-        sorted_words = sorted(self.words, key=lambda w: self.placement_counts[w], reverse=True)
         sub_id = 0
         current_words = []
         current_complexity = 0
         
-        for word in sorted_words:
+        for word in self.words:
             count = self.placement_counts[word]
             
             # Если слово не имеет размещений, пропускаем его
