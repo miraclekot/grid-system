@@ -8,7 +8,7 @@ from aiohttp import web
 import asyncio
 import threading
 
-from grid_system_common import Subproblem, Placement
+from grid_system_common import Subproblem, Placement, WorkerStatus
 from generator import Generator
 from dispatcher import Dispatcher
 
@@ -266,7 +266,6 @@ class Config:
 
 
 async def master_http_handler(master):
-    # Web server for worker registration and status
     app = web.Application()
     app['master'] = master
 
@@ -276,8 +275,21 @@ async def master_http_handler(master):
         worker_id = await master.dispatcher.register_worker(address)
         return web.json_response({'worker_id': worker_id})
 
+    async def heartbeat(request):
+        data = await request.json()
+        worker_id = data['worker_id']
+        status = WorkerStatus(data['status'])
+        current_task = data.get('current_task')
+        await master.dispatcher.update_heartbeat(worker_id, status, current_task)
+        return web.Response(status=200)
+
+    async def workers_status(request):
+        status = master.dispatcher.get_worker_status()
+        return web.json_response(status)
+
     app.router.add_post('/register', register)
-    # Add more endpoints if needed
+    app.router.add_post('/heartbeat', heartbeat)
+    app.router.add_get('/workers', workers_status)
 
     runner = web.AppRunner(app)
     await runner.setup()
