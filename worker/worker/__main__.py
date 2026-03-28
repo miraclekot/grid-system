@@ -31,7 +31,7 @@ class Worker:
         self.session = None
         self.heartbeat_task = None
         self.registration_task = None
-        self.running = False
+        self.running = True
         self.registered = False
         
         # Настройка логирования
@@ -46,26 +46,13 @@ class Worker:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         
-        # Файловый обработчик для отладки
-        log_dir = Path("worker_logs")
-        log_dir.mkdir(exist_ok=True)
-        file_handler = logging.handlers.RotatingFileHandler(
-            os.path.join(log_dir, "worker.log"),
-            maxBytes=10*1024*1024,
-            backupCount=3,
-            encoding='utf-8'
-        )
-        file_handler.setLevel(logging.DEBUG)
-        
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         console_handler.setFormatter(formatter)
-        file_handler.setFormatter(formatter)
         
         self.logger.addHandler(console_handler)
-        self.logger.addHandler(file_handler)
     
     async def register_with_retry(self):
         """Регистрация в мастере с повторными попытками."""
@@ -138,6 +125,8 @@ class Worker:
             try:
                 await asyncio.sleep(5)
                 
+                self.logger.info(f"Send heartbeat status...")
+                
                 if not self.registered:
                     self.logger.debug("Not registered, skipping heartbeat")
                     continue
@@ -162,9 +151,11 @@ class Worker:
                 if heartbeat_failures >= max_failures:
                     await self.reconnect()
                     heartbeat_failures = 0
+                    
+        self.logger.info(f"Stop heartbeat status.")
     
     async def _send_heartbeat(self) -> bool:
-        """Отправка heartbeat мастеру."""
+        """Отправка heartbeat мастеру."""        
         if not self.worker_id or not self.registered:
             return False
         

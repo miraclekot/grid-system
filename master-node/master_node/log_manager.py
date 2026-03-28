@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import os
 from pathlib import Path
 from typing import List, Tuple, Dict
 
@@ -8,7 +9,7 @@ class LogManager:
     """Управление логами для различных компонентов."""
     
     def __init__(self, log_dir: Path):
-        self.log_dir = log_dir
+        self.log_dir = log_dir    
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.loggers: Dict[str, logging.Logger] = {}
         self._setup_loggers()
@@ -25,6 +26,10 @@ class LogManager:
             
             # Файловый обработчик
             log_file = self.log_dir / f"{component}.log"
+            
+            if log_file.exists():
+                os.remove(log_file)
+            
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
             )

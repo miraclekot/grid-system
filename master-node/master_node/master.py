@@ -317,6 +317,8 @@ async def master_http_handler(master: Master):
             return web.Response(status=500, text=str(e))
     
     async def heartbeat(request):
+        master.logger.debug("handle heartbeat...")
+        
         data = await request.json()
         worker_id = data['worker_id']
         status = WorkerStatus(data['status'])
