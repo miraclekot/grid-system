@@ -15,14 +15,19 @@ async def main():
     config = Config()
     
     # Ввод параметров
-    config.matrix_path = input("Путь к файлу матрицы: ").strip()
-    config.words_path = input("Путь к файлу словаря: ").strip()
+    config.matrix_path = input("Путь к файлу матрицы (Default: ../data/task_matrix.txt): ").strip()
+    if config.matrix_path == "":
+        config.matrix_path = "../data/task_matrix.txt"
+    
+    config.words_path = input("Путь к файлу словаря (Default: ../data/task_dict.txt): ").strip()
+    if config.words_path == "":
+        config.words_path = "../data/task_dict.txt"
     
     try:
-        config.coefficient = int(input("Коэффициент сложности: ").strip())
+        config.coefficient = float(input("Коэффициент сложности (Default: 10 ** 3): ").strip())
     except ValueError:
-        print("Используется коэффициент по умолчанию: 1000")
-        config.coefficient = 1000
+        print("Используется коэффициент по умолчанию: 10^3")
+        config.coefficient = 1000.0
     
     master = Master(config)
     

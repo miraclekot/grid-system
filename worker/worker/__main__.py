@@ -36,7 +36,7 @@ class Worker:
         self.logger.setLevel(logging.DEBUG)
         
         # Консольный обработчик
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         
         formatter = logging.Formatter(
@@ -217,6 +217,7 @@ class Worker:
         if self.session:
             await self.session.close()
 
+
 async def main():
     parser = argparse.ArgumentParser(description='Grid System Worker')
     parser.add_argument('master_url', help='URL of master node (e.g., http://127.0.0.1:8080)')
@@ -248,6 +249,7 @@ async def main():
     finally:
         await worker.stop()
         print("Worker stopped.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

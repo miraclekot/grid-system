@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from typing import Optional
 from pathlib import Path
 
@@ -6,7 +8,7 @@ from master_node.master import Master
 
 
 class Console:
-    """Консольный интерфейс."""
+    """Консольный интерфейс с очисткой экрана."""
     
     def __init__(self, master: Master):
         self.master = master
@@ -15,19 +17,44 @@ class Console:
         self.log_viewing = False
         self.log_lines_per_page = 20
     
+    def clear_screen(self):
+        """Очистка экрана терминала."""
+        # Windows
+        if os.name == 'nt':
+            os.system('cls')
+        # Unix/Linux/MacOS
+        else:
+            os.system('clear')
+    
+    def print_header(self, title: str):
+        """Вывод заголовка."""
+        print("="*70)
+        print(f"     {title}")
+        print("="*70)
+    
+    def print_footer(self):
+        """Вывод подвала с инструкцией."""
+        print("-"*70)
+        print("Для возврата в главное меню нажмите Ctrl+C")
+    
     async def run(self):
         """Запуск консольного интерфейса."""
-        while self.running:
-            self.show_menu()
-            choice = await asyncio.to_thread(input, "Выберите пункт: ")
-            await self.handle_choice(choice)
+        try:
+            while self.running:
+                self.clear_screen()
+                self.show_menu()
+                choice = await asyncio.to_thread(input, "\nВыберите пункт: ")
+                await self.handle_choice(choice)
+        except KeyboardInterrupt:
+            self.clear_screen()
+            print("\nВыход...")
+            self.running = False
     
     def show_menu(self):
         """Отображение главного меню."""
         if self.current_menu == "main":
-            print("\n" + "="*60)
-            print("     ГРИД-СИСТЕМА (MASTER NODE)")
-            print("="*60)
+            self.print_header("ГРИД-СИСТЕМА (MASTER NODE)")
+            print()
             print("1. Настройки")
             if self.master.computation_started:
                 print("2. Вычисления (запущены)")
@@ -37,7 +64,7 @@ class Console:
             print("4. Логи")
             print("5. Показать матрицу")
             print("0. Выход")
-            print("-"*60)
+            self.print_footer()
             
         elif self.current_menu == "status":
             self.show_status_menu()
@@ -47,10 +74,10 @@ class Console:
     
     def show_status_menu(self):
         """Отображение меню статуса."""
+        self.print_header("СТАТУС ВЫЧИСЛЕНИЙ")
+        
         status = self.master.get_status()
-        print("\n" + "="*60)
-        print("          СТАТУС ВЫЧИСЛЕНИЙ")
-        print("="*60)
+        print()
         print(f"Вычисления запущены: {'Да' if status['started'] else 'Нет'}")
         print(f"Вычисления завершены: {'Да' if status['done'] else 'Нет'}")
         print(f"Всего подзадач: {status['subproblems_total']}")
@@ -75,36 +102,39 @@ class Console:
                 if w.get('current_task'):
                     print(f"    Текущая задача: {w['current_task']}")
         
-        print("\n" + "-"*60)
-        print("Подменю:")
+        print("\n" + "-"*70)
         print("1. Показать решение")
         print("2. Показать подзадачи")
         print("3. Показать воркеров")
         print("4. Показать матрицу (покрытие)")
         print("0. Назад")
-        print("-"*60)
+        print("-"*70)
     
     def show_logs_menu(self):
         """Отображение меню логов."""
-        print("\n" + "="*60)
-        print("             ЛОГИ")
-        print("="*60)
+        self.print_header("ЛОГИ")
+        print()
         print("1. Master log")
         print("2. Generator log")
         print("3. Dispatcher log")
         print("0. Назад")
-        print("-"*60)
+        self.print_footer()
     
     async def handle_choice(self, choice):
         """Обработка выбора пользователя."""
-        if self.current_menu == "main":
-            await self.handle_main_menu(choice)
-        elif self.current_menu == "status":
-            await self.handle_status_menu(choice)
-        elif self.current_menu == "logs":
-            await self.handle_logs_menu(choice)
-        elif self.current_menu == "log_viewer":
-            await self.handle_log_viewer(choice)
+        try:
+            if self.current_menu == "main":
+                await self.handle_main_menu(choice)
+            elif self.current_menu == "status":
+                await self.handle_status_menu(choice)
+            elif self.current_menu == "logs":
+                await self.handle_logs_menu(choice)
+            elif self.current_menu == "log_viewer":
+                await self.handle_log_viewer(choice)
+        except KeyboardInterrupt:
+            # Возврат в главное меню при нажатии Ctrl+C
+            self.current_menu = "main"
+            await asyncio.sleep(0.5)
     
     async def handle_main_menu(self, choice):
         """Обработка главного меню."""
@@ -112,35 +142,42 @@ class Console:
             await self.show_settings()
         elif choice == "2":
             if not self.master.computation_started:
+                self.clear_screen()
                 print("\nЗапуск вычислений...")
                 await self.master.start_computation()
                 print("Вычисления запущены.")
+                await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
             else:
+                self.clear_screen()
                 print("Вычисления уже запущены.")
+                await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
         elif choice == "3":
             if self.master.computation_started:
                 self.current_menu = "status"
             else:
+                self.clear_screen()
                 print("Пункт недоступен. Сначала запустите вычисления.")
+                await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
         elif choice == "4":
             self.current_menu = "logs"
         elif choice == "5":
-            self.show_matrix()
-        elif choice == "0":
+            await self.show_matrix()
+        elif choice == "0" or choice.lower() == "q":
+            self.clear_screen()
             print("\nВыход...")
             self.running = False
     
     async def handle_status_menu(self, choice):
         """Обработка меню статуса."""
         if choice == "1":
-            self.show_solution()
+            await self.show_solution()
         elif choice == "2":
             await self.show_subproblems()
         elif choice == "3":
-            self.show_workers()
+            await self.show_workers()
         elif choice == "4":
-            self.show_covered_matrix()
-        elif choice == "0":
+            await self.show_covered_matrix()
+        elif choice == "0" or choice.lower() == "q":
             self.current_menu = "main"
     
     async def handle_logs_menu(self, choice):
@@ -154,7 +191,7 @@ class Console:
         if choice in component_map:
             component = component_map[choice]
             await self.view_log(component)
-        elif choice == "0":
+        elif choice == "0" or choice.lower() == "q":
             self.current_menu = "main"
     
     async def handle_log_viewer(self, choice):
@@ -163,80 +200,103 @@ class Console:
     
     async def show_settings(self):
         """Отображение и изменение настроек."""
-        print("\n" + "="*60)
-        print("          НАСТРОЙКИ")
-        print("="*60)
-        print(f"1. Путь к матрице: {self.master.config.matrix_path}")
-        print(f"2. Путь к словарю: {self.master.config.words_path}")
-        print(f"3. Коэффициент сложности: {self.master.config.coefficient}")
-        print(f"4. Таймаут воркера (сек): {self.master.config.worker_timeout}")
-        print("0. Назад")
-        print("-"*60)
-        
-        choice = await asyncio.to_thread(input, "Выберите параметр для изменения: ")
-        
-        if choice == "1":
-            new_path = await asyncio.to_thread(input, "Новый путь к матрице: ")
-            try:
-                self.master.load_matrix(new_path)
-                self.master.config.matrix_path = new_path
-                print("Матрица обновлена.")
-            except Exception as e:
-                print(f"Ошибка загрузки матрицы: {e}")
-        elif choice == "2":
-            new_path = await asyncio.to_thread(input, "Новый путь к словарю: ")
-            try:
-                self.master.load_words(new_path)
-                self.master.config.words_path = new_path
-                print("Словарь обновлен.")
-            except Exception as e:
-                print(f"Ошибка загрузки словаря: {e}")
-        elif choice == "3":
-            try:
-                new_val = int(await asyncio.to_thread(input, "Новый коэффициент: "))
-                self.master.config.coefficient = new_val
-                print("Коэффициент изменен.")
-            except ValueError:
-                print("Неверное значение.")
-        elif choice == "4":
-            try:
-                new_val = float(await asyncio.to_thread(input, "Новый таймаут (сек): "))
-                self.master.config.worker_timeout = new_val
-                print("Таймаут изменен.")
-            except ValueError:
-                print("Неверное значение.")
+        while True:
+            self.clear_screen()
+            self.print_header("НАСТРОЙКИ")
+            print()
+            print(f"1. Путь к матрице: {self.master.config.matrix_path}")
+            print(f"2. Путь к словарю: {self.master.config.words_path}")
+            print(f"3. Коэффициент сложности: {self.master.config.coefficient}")
+            print(f"4. Таймаут воркера (сек): {self.master.config.worker_timeout}")
+            print("0. Назад")
+            print("-"*70)
+            
+            choice = await asyncio.to_thread(input, "Выберите параметр для изменения: ")
+            
+            if choice == "1":
+                new_path = await asyncio.to_thread(input, "Новый путь к матрице: ")
+                try:
+                    self.master.load_matrix(new_path)
+                    self.master.config.matrix_path = new_path
+                    self.clear_screen()
+                    print("Матрица обновлена.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+                except Exception as e:
+                    self.clear_screen()
+                    print(f"Ошибка загрузки матрицы: {e}")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+            elif choice == "2":
+                new_path = await asyncio.to_thread(input, "Новый путь к словарю: ")
+                try:
+                    self.master.load_words(new_path)
+                    self.master.config.words_path = new_path
+                    self.clear_screen()
+                    print("Словарь обновлен.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+                except Exception as e:
+                    self.clear_screen()
+                    print(f"Ошибка загрузки словаря: {e}")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+            elif choice == "3":
+                try:
+                    new_val = int(await asyncio.to_thread(input, "Новый коэффициент: "))
+                    self.master.config.coefficient = new_val
+                    self.clear_screen()
+                    print("Коэффициент изменен.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+                except ValueError:
+                    self.clear_screen()
+                    print("Неверное значение.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+            elif choice == "4":
+                try:
+                    new_val = float(await asyncio.to_thread(input, "Новый таймаут (сек): "))
+                    self.master.config.worker_timeout = new_val
+                    self.clear_screen()
+                    print("Таймаут изменен.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+                except ValueError:
+                    self.clear_screen()
+                    print("Неверное значение.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+            elif choice == "0" or choice.lower() == "q":
+                break
     
     async def show_matrix(self):
         """Отображение исходной матрицы."""
-        print("\n" + "="*60)
-        print("          ИСХОДНАЯ МАТРИЦА")
-        print("="*60)
+        self.clear_screen()
+        self.print_header("ИСХОДНАЯ МАТРИЦА")
+        print()
         print(self.master.get_matrix_display())
-        await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+        print()
+        await asyncio.to_thread(input, "Нажмите Enter для продолжения...")
     
     async def show_covered_matrix(self):
         """Отображение матрицы с покрытием."""
         if not self.master.final_placements:
+            self.clear_screen()
             print("\nРешение еще не найдено.")
+            await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
             return
         
-        print("\n" + "="*60)
-        print("     МАТРИЦА С ПОКРЫТИЕМ ([X] - покрыто)")
-        print("="*60)
+        self.clear_screen()
+        self.print_header("МАТРИЦА С ПОКРЫТИЕМ ([X] - покрыто)")
+        print()
         print(self.master.get_covered_matrix_display())
-        await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+        print()
+        await asyncio.to_thread(input, "Нажмите Enter для продолжения...")
     
     async def show_solution(self):
         """Отображение итогового решения."""
-        print("\n" + "="*60)
-        print("       ИТОГОВОЕ РЕШЕНИЕ")
-        print("="*60)
+        self.clear_screen()
+        self.print_header("ИТОГОВОЕ РЕШЕНИЕ")
         
         if not self.master.final_placements:
-            print("Решение не найдено.")
+            print("\nРешение не найдено.")
+            await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
             return
         
-        print(f"Выбрано слов: {len(self.master.final_placements)}")
+        print(f"\nВыбрано слов: {len(self.master.final_placements)}")
         print("\nРазмещения:")
         
         direction_map = {
@@ -250,14 +310,37 @@ class Console:
             (-1, -1): "↖ (вверх-влево)"
         }
         
-        for i, p in enumerate(self.master.final_placements[:30], 1):
-            direction = direction_map.get((p.dr, p.dc), f"({p.dr},{p.dc})")
-            print(f"  {i:2d}. {p.word} → [{p.row}, {p.col}] {direction}")
+        # Постраничный вывод решения
+        page = 0
+        items_per_page = 20
+        total_items = len(self.master.final_placements)
+        total_pages = (total_items + items_per_page - 1) // items_per_page
         
-        if len(self.master.final_placements) > 30:
-            print(f"  ... и еще {len(self.master.final_placements) - 30} слов")
-        
-        await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+        while True:
+            self.clear_screen()
+            self.print_header(f"ИТОГОВОЕ РЕШЕНИЕ (страница {page+1}/{total_pages})")
+            print(f"\nВыбрано слов: {total_items}")
+            print("\nРазмещения:")
+            print("-"*70)
+            
+            start = page * items_per_page
+            end = min(start + items_per_page, total_items)
+            
+            for i, p in enumerate(self.master.final_placements[start:end], start + 1):
+                direction = direction_map.get((p.dr, p.dc), f"({p.dr},{p.dc})")
+                print(f"  {i:3d}. {p.word} → [{p.row}, {p.col}] {direction}")
+            
+            print("-"*70)
+            print("[N] следующая | [P] предыдущая | [Q] выход")
+            
+            cmd = await asyncio.to_thread(input, "\nКоманда: ")
+            
+            if cmd.lower() == 'n' and page < total_pages - 1:
+                page += 1
+            elif cmd.lower() == 'p' and page > 0:
+                page -= 1
+            elif cmd.lower() == 'q':
+                break
     
     async def show_subproblems(self):
         """Показ списка подзадач с пагинацией."""
@@ -268,9 +351,13 @@ class Console:
             sub_ids = sorted(self.master.subproblems.keys())
             total_pages = (len(sub_ids) + page_size - 1) // page_size if sub_ids else 1
             
-            print("\n" + "="*70)
-            print(f"       ПОДЗАДАЧИ (страница {page+1}/{total_pages})")
-            print("="*70)
+            self.clear_screen()
+            self.print_header(f"ПОДЗАДАЧИ (страница {page+1}/{total_pages})")
+            
+            if not sub_ids:
+                print("\nНет подзадач.")
+                await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+                break
             
             start = page * page_size
             end = min(start + page_size, len(sub_ids))
@@ -302,9 +389,13 @@ class Console:
                     if info:
                         await self.show_subproblem_detail(sub_id)
                     else:
+                        self.clear_screen()
                         print("Задача не найдена.")
+                        await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
                 except ValueError:
+                    self.clear_screen()
                     print("Неверный номер.")
+                    await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
             elif cmd.lower() == 'q':
                 break
     
@@ -314,10 +405,10 @@ class Console:
         if not info:
             return
         
-        print("\n" + "="*60)
-        print(f"       ПОДЗАДАЧА {sub_id}")
-        print("="*60)
-        print(f"Слова: {', '.join(info['words'])}")
+        self.clear_screen()
+        self.print_header(f"ПОДЗАДАЧА {sub_id}")
+        
+        print(f"\nСлова: {', '.join(info['words'])}")
         print(f"Сложность: {info['complexity']}")
         print(f"Статус: {'решена' if info['solved'] else 'не решена'}")
         print(f"Создана: {info['created_at']}")
@@ -333,15 +424,14 @@ class Console:
     
     async def show_workers(self):
         """Показ статуса воркеров."""
+        self.clear_screen()
+        self.print_header("СТАТУС ВОРКЕРОВ")
+        
         status = self.master.get_status()
         workers = status.get('workers', {})
         
-        print("\n" + "="*60)
-        print("         СТАТУС ВОРКЕРОВ")
-        print("="*60)
-        
         if not workers:
-            print("Нет активных воркеров.")
+            print("\nНет активных воркеров.")
         else:
             for wid, w in workers.items():
                 status_icon = {
@@ -358,11 +448,11 @@ class Console:
                 if w.get('last_heartbeat'):
                     print(f"   Последний heartbeat: {w['last_heartbeat']}")
         
-        await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+        print()
+        await asyncio.to_thread(input, "Нажмите Enter для продолжения...")
     
     async def view_log(self, component: str):
         """Просмотр лога с поддержкой пагинации и автообновления."""
-        self.current_menu = "log_viewer"
         offset = 0
         lines_per_page = 20
         watching = False
@@ -373,18 +463,23 @@ class Console:
                 component, lines_per_page, offset
             )
             
-            print("\n" + "="*70)
+            self.clear_screen()
+            print("="*70)
             print(f"Лог: {component}.log (строки {offset+1}-{min(offset+lines_per_page, total_lines)} из {total_lines})")
             print("="*70)
             
-            for line in lines:
-                print(line.rstrip())
+            if not lines:
+                print("\n(лог пуст)")
+            else:
+                for line in lines:
+                    print(line.rstrip())
             
             print("-"*70)
-            if watching and end_reached:
-                print("[A] Автообновление включено - следим за новыми записями...")
-            elif watching:
-                print("[A] Автообновление включено")
+            if watching:
+                if end_reached:
+                    print("[A] Автообновление ВКЛЮЧЕНО - следим за новыми записями...")
+                else:
+                    print("[A] Автообновление ВКЛЮЧЕНО")
             else:
                 print("[A] Включить автообновление (следить за новыми записями)")
             
@@ -402,7 +497,11 @@ class Console:
                 await asyncio.sleep(1)
                 continue
             
-            cmd = await asyncio.to_thread(input, "Команда: ")
+            try:
+                cmd = await asyncio.to_thread(input, "\nКоманда: ")
+            except KeyboardInterrupt:
+                watching = False
+                continue
             
             if cmd.lower() == 'n' and not end_reached:
                 offset += lines_per_page
@@ -423,7 +522,5 @@ class Console:
                     last_total_lines = total_lines
                     if end_reached:
                         offset = max(0, total_lines - lines_per_page)
-                    print("\nАвтообновление включено.")
             elif cmd.lower() == 'q':
-                self.current_menu = "logs"
                 break

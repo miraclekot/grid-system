@@ -4,6 +4,7 @@ from enum import Enum
 from datetime import datetime
 import json
 
+
 class EnhancedJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for dataclasses and datetime."""
     def default(self, obj):
@@ -15,9 +16,11 @@ class EnhancedJSONEncoder(json.JSONEncoder):
             return obj.value
         return super().default(obj)
 
+
 def json_serialize(obj: Any) -> str:
     """Serialize object to JSON."""
-    return json.dumps(obj, cls=EnhancedJSONEncoder, indent=2)
+    return json.dumps(obj, cls=EnhancedJSONEncoder, indent=2, ensure_ascii=False)
+
 
 def json_deserialize(data: str, obj_type=None):
     """Deserialize JSON to Python object."""
@@ -25,6 +28,7 @@ def json_deserialize(data: str, obj_type=None):
     if obj_type and is_dataclass(obj_type):
         return obj_type(**parsed)
     return parsed
+
 
 DIRECTIONS = [
     (0, 1),   # right
@@ -37,11 +41,13 @@ DIRECTIONS = [
     (-1, -1)  # up-left
 ]
 
+
 class WorkerStatus(Enum):
     AVAILABLE = "available"
     BUSY = "busy"
     OFFLINE = "offline"
     UNKNOWN = "unknown"
+
 
 @dataclass
 class Placement:
@@ -52,7 +58,7 @@ class Placement:
     dc: int
     cells: List[Tuple[int, int]]
     
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             'word': self.word,
             'row': self.row,
@@ -73,6 +79,7 @@ class Placement:
             cells=[(r, c) for r, c in data['cells']]
         )
 
+
 @dataclass
 class Subproblem:
     id: int
@@ -85,6 +92,7 @@ class Subproblem:
     placements: List[Placement] = field(default_factory=list)
     error: Optional[str] = None
 
+
 @dataclass
 class WorkerInfo:
     id: int
@@ -93,6 +101,7 @@ class WorkerInfo:
     last_heartbeat: datetime = field(default_factory=datetime.now)
     current_task: Optional[int] = None
     task_start_time: Optional[datetime] = None
+
 
 @dataclass
 class Heartbeat:

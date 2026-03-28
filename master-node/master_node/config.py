@@ -4,7 +4,7 @@ class Config:
     def __init__(self):
         self.matrix_path = ""
         self.words_path = ""
-        self.coefficient = 1000
+        self.coefficient = 1000.0
         self.worker_timeout = 30.0
         self.task_timeout = 60.0
         self.dispatcher_poll_timeout = 1.0
