@@ -5,19 +5,14 @@ from typing import List, Dict, Optional
 from aiohttp import web
 
 from grid_system_common import Placement, Subproblem, WorkerStatus
-from .generator import Generator
-from .dispatcher import Dispatcher
-from .config import Config
-from .log_manager import LogManager
-from .storage import PersistentStorage
-from .console import Console
-
-# Определение корневой директории проекта
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-MASTER_ROOT = Path(__file__).parent.parent
+from master_node.generator import Generator
+from master_node.dispatcher import Dispatcher
+from master_node.config import Config
+from master_node.log_manager import LogManager
+from master_node.storage import PersistentStorage
 
 class Master:
-    def __init__(self, config):
+    def __init__(self, config: Config):
         self.config = config
         self.matrix = None
         self.words = None
@@ -29,35 +24,60 @@ class Master:
         self.computation_done = False
         self.final_placements = []
         
+        # Инициализация директорий
+        self.master_dir = Path(__file__).parent
+        self.logs_dir = self.master_dir / "_logs"
+        self.processing_dir = self.master_dir / "_processing"
+        
         # Инициализация сервисов
-        self.log_manager = LogManager(MASTER_ROOT / "master_node" / "_logs")
-        self.storage = PersistentStorage(MASTER_ROOT / "master_node" / "_processing")
+        self.log_manager = LogManager(self.logs_dir)
+        self.storage = PersistentStorage(self.processing_dir)
         
         # Логгеры
         self.logger = self.log_manager.get_logger("master")
-        self.generator_logger = self.log_manager.get_logger("generator")
-        self.dispatcher_logger = self.log_manager.get_logger("dispatcher")
     
-    def load_matrix(self, path):
-        with open(path, 'r') as f:
-            lines = f.read().strip().splitlines()
+    def load_matrix(self, path: str):
+        """Загрузка матрицы из файла."""
+        with open(path, 'r', encoding='utf-8') as f:
+            # Читаем все строки, удаляем пустые
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            
             if not lines:
                 raise ValueError("Empty matrix file")
-            h, w = map(int, lines[0].split())
-            matrix = [list(line.strip()) for line in lines[1:1+h]]
-            if len(matrix) != h or any(len(row) != w for row in matrix):
-                raise ValueError("Matrix dimensions do not match header")
+            
+            # Парсим матрицу: каждая строка содержит буквы, разделенные пробелами
+            matrix = []
+            for line in lines:
+                # Разделяем по пробелам и удаляем пустые элементы
+                row = [ch for ch in line.split() if ch]
+                if row:
+                    matrix.append(row)
+            
+            # Проверяем, что все строки одинаковой длины
+            if not matrix:
+                raise ValueError("Matrix is empty after parsing")
+            
+            width = len(matrix[0])
+            for i, row in enumerate(matrix):
+                if len(row) != width:
+                    raise ValueError(f"Row {i} has {len(row)} columns, expected {width}")
+            
             self.matrix = matrix
-        self.logger.info(f"Matrix loaded: {h}x{w}")
-        return matrix
+        
+        self.logger.info(f"Matrix loaded: {len(self.matrix)}x{len(self.matrix[0])}")
+        return self.matrix
     
-    def load_words(self, path):
-        with open(path, 'r') as f:
-            self.words = [line.strip() for line in f if line.strip()]
+    def load_words(self, path: str):
+        """Загрузка слов из файла."""
+        with open(path, 'r', encoding='utf-8') as f:
+            # Читаем все строки, удаляем пустые и лишние пробелы
+            self.words = [line.strip() for line in f.readlines() if line.strip()]
+        
         self.logger.info(f"Words loaded: {len(self.words)} words")
         return self.words
     
     async def start_computation(self):
+        """Запуск вычислений."""
         if self.computation_started:
             self.logger.warning("Computation already started")
             return
@@ -74,7 +94,7 @@ class Master:
             self.logger.info(f"Loaded {len(completed)} completed subtasks from storage")
             
             # Создаем генератор и вычисляем размещения
-            self.generator = Generator(self.matrix, self.words, self.config.coefficient)
+            self.generator = Generator(self.matrix, self.words, self.config.coefficient, self.log_manager)
             await asyncio.to_thread(self.generator.compute_placement_counts)
             self.generator.create_subproblems()
             
@@ -100,7 +120,12 @@ class Master:
                 tasks.append(task)
             
             # Ждем завершения всех задач
-            await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Проверяем наличие ошибок
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"Task failed: {result}")
             
             # Сохраняем результаты
             self.storage.save_results(self.results)
@@ -126,11 +151,13 @@ class Master:
             self.storage.save_completed_subtask(subproblem.id)
             self.storage.save_results(self.results)
             self.logger.info(f"Subproblem {subproblem.id} solved with {len(placements)} placements")
+            return placements
         except Exception as e:
             self.logger.error(f"Subproblem {subproblem.id} failed: {e}")
             self.results[subproblem.id] = []
+            raise
     
-    def compute_covering(self, all_placements: List[Placement]):
+    def compute_covering(self, all_placements: List[Placement]) -> List[Placement]:
         """Жадный алгоритм покрытия."""
         if not all_placements:
             return []
@@ -140,25 +167,39 @@ class Master:
         selected = []
         remaining = all_placements[:]
         
+        # Сортируем по количеству клеток в размещении (убывание)
+        remaining.sort(key=lambda p: len(p.cells), reverse=True)
+        
         while len(covered) < total_cells and remaining:
             best = None
             best_new = 0
+            
+            # Ищем размещение, покрывающее максимальное количество новых клеток
             for p in remaining:
                 new_cells = set(p.cells) - covered
                 if len(new_cells) > best_new:
                     best_new = len(new_cells)
                     best = p
+                if best_new == len(p.cells):  # Оптимальный вариант
+                    break
+            
             if best_new == 0:
                 break
+            
             selected.append(best)
             covered.update(best.cells)
             remaining.remove(best)
         
+        self.logger.info(f"Covering completed: {len(covered)} cells covered with {len(selected)} placements")
         return selected
     
-    def get_status(self):
+    def get_status(self) -> dict:
         """Получить текущий статус вычислений."""
         worker_status = self.dispatcher.get_worker_status() if self.dispatcher else {}
+        
+        total_cells = len(self.matrix) * len(self.matrix[0]) if self.matrix else 0
+        covered_cells = len(set(cell for p in self.final_placements for cell in p.cells)) if self.final_placements else 0
+        
         return {
             "started": self.computation_started,
             "done": self.computation_done,
@@ -166,7 +207,9 @@ class Master:
             "subproblems_solved": len(self.results),
             "subproblems_pending": len(self.subproblems) - len(self.results),
             "final_placements_count": len(self.final_placements),
-            "covered_cells": len(set(cell for p in self.final_placements for cell in p.cells)),
+            "total_cells": total_cells,
+            "covered_cells": covered_cells,
+            "uncovered_cells": total_cells - covered_cells,
             "workers": worker_status
         }
     
@@ -187,6 +230,38 @@ class Master:
             "solved_at": sub.solved_at.isoformat() if sub.solved_at else None,
             "placements_count": len(self.results.get(sub_id, []))
         }
+    
+    def get_matrix_display(self) -> str:
+        """Получить матрицу для отображения."""
+        if not self.matrix:
+            return ""
+        
+        result = []
+        for row in self.matrix:
+            result.append(" ".join(row))
+        return "\n".join(result)
+    
+    def get_covered_matrix_display(self) -> str:
+        """Получить матрицу с отображением покрытых клеток."""
+        if not self.matrix:
+            return ""
+        
+        covered_cells = set()
+        for p in self.final_placements:
+            covered_cells.update(p.cells)
+        
+        result = []
+        for r, row in enumerate(self.matrix):
+            line = []
+            for c, ch in enumerate(row):
+                if (r, c) in covered_cells:
+                    line.append(f"[{ch}]")
+                else:
+                    line.append(f" {ch} ")
+            result.append(" ".join(line))
+        
+        return "\n".join(result)
+
 
 async def master_http_handler(master: Master):
     """HTTP обработчик для взаимодействия с воркерами."""
@@ -197,7 +272,7 @@ async def master_http_handler(master: Master):
         data = await request.json()
         address = data['address']
         worker_id = await master.dispatcher.register_worker(address)
-        master.dispatcher_logger.info(f"Worker {worker_id} registered from {address}")
+        master.logger.info(f"Worker {worker_id} registered from {address}")
         return web.json_response({'worker_id': worker_id})
     
     async def heartbeat(request):
@@ -206,7 +281,7 @@ async def master_http_handler(master: Master):
         status = WorkerStatus(data['status'])
         current_task = data.get('current_task')
         await master.dispatcher.update_heartbeat(worker_id, status, current_task)
-        master.dispatcher_logger.debug(f"Heartbeat from worker {worker_id}: {status.value}")
+        master.logger.debug(f"Heartbeat from worker {worker_id}: {status.value}")
         return web.Response(status=200)
     
     async def workers_status(request):
@@ -225,51 +300,4 @@ async def master_http_handler(master: Master):
     master.logger.info(f"Master HTTP server started on {master.config.master_host}:{master.config.master_port}")
     return runner
 
-async def main():
-    """Главная функция."""
-    print("\n" + "="*60)
-    print("     ГРИД-СИСТЕМА - MASTER NODE")
-    print("="*60)
-    
-    config = Config()
-    
-    # Ввод параметров
-    config.matrix_path = input("Путь к файлу матрицы: ").strip()
-    config.words_path = input("Путь к файлу словаря: ").strip()
-    try:
-        config.coefficient = int(input("Коэффициент сложности: ").strip())
-    except ValueError:
-        print("Используется коэффициент по умолчанию: 1000")
-        config.coefficient = 1000
-    
-    master = Master(config)
-    
-    try:
-        master.load_matrix(config.matrix_path)
-        master.load_words(config.words_path)
-    except Exception as e:
-        print(f"Ошибка загрузки данных: {e}")
-        return
-    
-    # Запуск HTTP сервера для воркеров
-    try:
-        http_runner = await master_http_handler(master)
-    except Exception as e:
-        print(f"Ошибка запуска HTTP сервера: {e}")
-        return
-    
-    # Запуск консоли
-    console = Console(master)
-    try:
-        await console.run()
-    except KeyboardInterrupt:
-        print("\nПолучен сигнал прерывания...")
-    finally:
-        if master.dispatcher:
-            await master.dispatcher.stop()
-        await http_runner.cleanup()
-    
-    print("Master node остановлен.")
-
-if __name__ == "__main__":
     asyncio.run(main())

@@ -1,4 +1,5 @@
 from grid_system_common import Subproblem, DIRECTIONS
+import logging
 
 class Generator:
     def __init__(self, matrix, words, coefficient, log_manager=None):
@@ -7,12 +8,11 @@ class Generator:
         self.coefficient = coefficient
         self.placement_counts = {}
         self.subproblems = []
-        self.logger = log_manager.get_logger("generator") if log_manager else None
+        self.logger = log_manager.get_logger("generator") if log_manager else logging.getLogger("generator")
     
     def compute_placement_counts(self):
         """Вычисление количества возможных размещений для каждого слова."""
-        if self.logger:
-            self.logger.info(f"Computing placement counts for {len(self.words)} words")
+        self.logger.info(f"Computing placement counts for {len(self.words)} words")
         
         # Построение индекса позиций букв
         letter_positions = {}
@@ -21,17 +21,24 @@ class Generator:
                 letter_positions.setdefault(ch, []).append((r, c))
         
         # Подсчет размещений для каждого слова
-        for word in self.words:
+        for idx, word in enumerate(self.words):
             count = 0
             first_char = word[0]
-            for r, c in letter_positions.get(first_char, []):
+            positions = letter_positions.get(first_char, [])
+            
+            for r, c in positions:
                 for dr, dc in DIRECTIONS:
                     if self._fits(word, r, c, dr, dc):
                         count += 1
+            
             self.placement_counts[word] = count
+            
+            if (idx + 1) % 1000 == 0:
+                self.logger.debug(f"Processed {idx + 1}/{len(self.words)} words")
         
-        if self.logger:
-            self.logger.info(f"Placement counts computed. Min: {min(self.placement_counts.values())}, Max: {max(self.placement_counts.values())}")
+        min_count = min(self.placement_counts.values()) if self.placement_counts else 0
+        max_count = max(self.placement_counts.values()) if self.placement_counts else 0
+        self.logger.info(f"Placement counts computed. Min: {min_count}, Max: {max_count}")
     
     def _fits(self, word, r, c, dr, dc):
         """Проверка, помещается ли слово в заданную позицию."""
@@ -46,8 +53,7 @@ class Generator:
     
     def create_subproblems(self):
         """Создание подзадач на основе коэффициента сложности."""
-        if self.logger:
-            self.logger.info(f"Creating subproblems with coefficient {self.coefficient}")
+        self.logger.info(f"Creating subproblems with coefficient {self.coefficient}")
         
         # Сортировка слов по убыванию количества размещений для балансировки
         sorted_words = sorted(self.words, key=lambda w: self.placement_counts[w], reverse=True)
@@ -58,6 +64,11 @@ class Generator:
         for word in sorted_words:
             count = self.placement_counts[word]
             
+            # Если слово не имеет размещений, пропускаем его
+            if count == 0:
+                self.logger.debug(f"Word '{word}' has no placements, skipping")
+                continue
+            
             # Если слово слишком сложное, создаем отдельную подзадачу
             if count > self.coefficient:
                 if current_words:
@@ -67,8 +78,7 @@ class Generator:
                     current_complexity = 0
                 self.subproblems.append(Subproblem(sub_id, [word], count))
                 sub_id += 1
-                if self.logger:
-                    self.logger.debug(f"Single-word subproblem {sub_id-1}: {word} (complexity: {count})")
+                self.logger.debug(f"Single-word subproblem {sub_id-1}: {word} (complexity: {count})")
             else:
                 if current_complexity + count <= self.coefficient:
                     current_words.append(word)
@@ -77,15 +87,12 @@ class Generator:
                     if current_words:
                         self.subproblems.append(Subproblem(sub_id, current_words, current_complexity))
                         sub_id += 1
-                        if self.logger:
-                            self.logger.debug(f"Subproblem {sub_id-1}: {len(current_words)} words, complexity: {current_complexity}")
+                        self.logger.debug(f"Subproblem {sub_id-1}: {len(current_words)} words, complexity: {current_complexity}")
                     current_words = [word]
                     current_complexity = count
         
         if current_words:
             self.subproblems.append(Subproblem(sub_id, current_words, current_complexity))
-            if self.logger:
-                self.logger.debug(f"Subproblem {sub_id}: {len(current_words)} words, complexity: {current_complexity}")
+            self.logger.debug(f"Subproblem {sub_id}: {len(current_words)} words, complexity: {current_complexity}")
         
-        if self.logger:
-            self.logger.info(f"Created {len(self.subproblems)} subproblems")
+        self.logger.info(f"Created {len(self.subproblems)} subproblems")

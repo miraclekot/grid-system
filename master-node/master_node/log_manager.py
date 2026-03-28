@@ -1,7 +1,7 @@
 import logging
+import logging.handlers
 from pathlib import Path
-import time
-from typing import Dict, List, Tuple
+from typing import List, Tuple, Dict
 
 
 class LogManager:
@@ -62,21 +62,3 @@ class LogManager:
         start = offset
         end = min(offset + lines, total_lines)
         return all_lines[start:end], total_lines, end_reached
-    
-    def watch_log(self, component: str, callback, interval: float = 1.0):
-        """Наблюдение за логом с автообновлением."""
-        log_file = self.log_dir / f"{component}.log"
-        last_size = 0
-        
-        while True:
-            if log_file.exists():
-                current_size = log_file.stat().st_size
-                if current_size > last_size:
-                    # Файл изменился, читаем новые строки
-                    with open(log_file, 'r', encoding='utf-8') as f:
-                        f.seek(last_size)
-                        new_lines = f.readlines()
-                        last_size = f.tell()
-                        for line in new_lines:
-                            callback(line.rstrip())
-            time.sleep(interval)

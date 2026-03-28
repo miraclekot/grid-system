@@ -1,7 +1,8 @@
+import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set, Optional
 
-from grid_system_common import Placement, Subproblem, json_deserialize, json_serialize
+from grid_system_common import Placement, Subproblem, json_serialize, json_deserialize
 
 
 class PersistentStorage:
@@ -25,7 +26,7 @@ class PersistentStorage:
         if not self.subproblems_file.exists():
             return {}
         with open(self.subproblems_file, 'r', encoding='utf-8') as f:
-            data = json_serialize(f.read())
+            data = json_deserialize(f.read())
             return {int(k): Subproblem(**v) for k, v in data.items()}
     
     def save_completed_subtask(self, subproblem_id: int):
@@ -33,7 +34,7 @@ class PersistentStorage:
         with open(self.completed_file, 'a', encoding='utf-8') as f:
             f.write(f"{subproblem_id}\n")
     
-    def load_completed_subtasks(self) -> set:
+    def load_completed_subtasks(self) -> Set[int]:
         """Загрузить ID выполненных подзадач."""
         if not self.completed_file.exists():
             return set()
