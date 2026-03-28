@@ -4,3 +4,6 @@ __pycache__
 build
 .vscode
 .venv
+master-node/master_node/_logs
+master-node/master_node/_processing
+worker/worker/_logs

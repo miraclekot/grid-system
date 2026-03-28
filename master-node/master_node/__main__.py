@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# __main__.py
 import asyncio
 
 from master_node.master import Master, master_http_handler

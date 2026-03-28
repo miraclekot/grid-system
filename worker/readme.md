@@ -96,7 +96,7 @@ Worker выводит логи в консоль:
 ## Запуск
 
 ```bash
-worker <master_url> [--host HOST] [--port PORT]
+python -m worker <master_url> [--host HOST] [--port PORT]
 ```
 
 **Параметры:**
@@ -111,13 +111,13 @@ worker <master_url> [--host HOST] [--port PORT]
 
 ```bash
 # Запуск worker с подключением к master на localhost
-worker http://127.0.0.1:8080
+python -m worker http://127.0.0.1:8080
 
 # Запуск worker на другом порту
-worker http://192.168.1.100:8080 --port 5001
+python -m worker http://127.0.0.1:8080 --port 5001
 
 # Запуск worker с прослушиванием всех интерфейсов
-worker http://127.0.0.1:8080 --host 0.0.0.0 --port 5000
+python -m worker http://127.0.0.1:8080 --host 0.0.0.0 --port 5000
 ```
 
 ## Завершение работы
@@ -139,13 +139,6 @@ Worker stopped.
 - Python 3.8+
 - aiohttp
 - grid-system-common
-
-## Установка
-
-```bash
-cd worker
-pip install -e .
-```
 
 ## Тестирование
 

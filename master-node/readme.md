@@ -157,7 +157,7 @@ master-node/
 ## Запуск
 
 ```bash
-master-node
+python -m master-node
 ```
 
 При запуске потребуется ввести:
@@ -181,13 +181,6 @@ master-node
 - Python 3.8+
 - aiohttp
 - grid-system-common
-
-## Установка
-
-```bash
-cd master-node
-pip install -e .
-```
 
 ## Разработка
 

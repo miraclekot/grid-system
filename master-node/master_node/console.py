@@ -1,3 +1,4 @@
+# console.py
 import asyncio
 import os
 import sys
@@ -152,12 +153,7 @@ class Console:
                 print("Вычисления уже запущены.")
                 await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
         elif choice == "3":
-            if self.master.computation_started:
-                self.current_menu = "status"
-            else:
-                self.clear_screen()
-                print("Пункт недоступен. Сначала запустите вычисления.")
-                await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
+            self.current_menu = "status"
         elif choice == "4":
             self.current_menu = "logs"
         elif choice == "5":
