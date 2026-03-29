@@ -319,8 +319,8 @@ class Console:
         print(f"Вычисления запущены: {'Да' if status['started'] else 'Нет'}")
         print(f"Вычисления завершены: {'Да' if status['done'] else 'Нет'}")
         print(f"Всего подзадач: {status['subproblems_total']}")
-        print(f"Решено подзадач: {status['subproblems_solved']}")
-        print(f"Ожидают решения: {status['subproblems_pending']}")
+        # print(f"Решено подзадач: {status['subproblems_solved']}")
+        # print(f"Ожидают решения: {status['subproblems_pending']}")
         print(f"Выбрано слов: {status['final_placements_count']}")
         print(f"Всего клеток: {status['total_cells']}")
         print(f"Покрыто клеток: {status['covered_cells']}")
@@ -388,7 +388,7 @@ class Console:
         elif choice == "2":
             if not self.master.computation_started:
                 self.clear_screen()
-                print("\nЗапуск вычислений...")
+                print(f"\nЗапуск вычислений (количество подзадач: {self.master.get_status()['subproblems_total']})...")
                 await self.master.start_computation()
                 print("Вычисления запущены.")
                 await asyncio.to_thread(input, "\nНажмите Enter для продолжения...")
@@ -541,6 +541,9 @@ class Console:
     
     async def show_solution(self):
         """Отображение итогового решения."""
+        
+        self.clear_screen()
+        
         if not self.master.final_placements:
             self.clear_screen()
             print("\nРешение не найдено.")

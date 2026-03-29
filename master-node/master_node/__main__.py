@@ -25,10 +25,10 @@ async def main():
         config.words_path = "../data/task_dict.txt"
     
     try:
-        config.coefficient = float(input("Коэффициент сложности (Default: 10 ** 3): ").strip())
+        config.coefficient = float(input("Коэффициент сложности (Default: 10 ** 4): ").strip())
     except ValueError:
         print("Используется коэффициент по умолчанию: 10^3")
-        config.coefficient = 1000.0
+        config.coefficient = 10 ** 4
     
     master = Master(config)
     
