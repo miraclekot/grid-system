@@ -1,0 +1,12 @@
+aiofiles==25.1.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.3
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+grid_system_common @ file:///Users/inkovatsenko/%D1%83%D1%87%D0%B5%D0%B1%D0%B0/kate/4_k/2_s/ermakov_grid/grid-system/grid-system-common
+idna==3.11
+multidict==6.7.1
+propcache==0.4.1
+setuptools==82.0.1
+yarl==1.23.0
